@@ -31,5 +31,3 @@ using namespace MSource;
 
 template class Grid::Hadrons::MSource::TSeqGamma<FIMPL>;
 template class Grid::Hadrons::MSource::TSeqGamma<ZFIMPL>;
-template class Grid::Hadrons::MSource::TSeqGamma<FIMPL,true>;
-template class Grid::Hadrons::MSource::TSeqGamma<ZFIMPL,true>;
