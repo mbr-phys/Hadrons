@@ -21,7 +21,8 @@ public:
                                     unsigned int, li,
                                     unsigned int, si,
                                     unsigned int, nNoise,
-                                    std::string, lapEigenPack);
+                                    std::string, lapEigenPack,
+                                    std::string, fileName);
 };
 
 template <typename FImpl>
@@ -108,6 +109,17 @@ void TInterlacedDistillation<FImpl>::execute(void)
 
     noise.generateNoise(rngSerial());
     noise.dumpDilutionMap();
+    auto hash = noise.generateHash();
+    LOG(Message) << "Noise hashes : " << std::endl;
+    for(auto& h: hash)
+    {
+        LOG(Message) << h << std::endl;
+    }
+
+    if(!par().fileName.empty())
+    {
+        noise.save(par().fileName, "InterlacedDistillation", vm().getTrajectory());
+    }
 }
 
 END_MODULE_NAMESPACE
