@@ -11,13 +11,9 @@
 
 BEGIN_HADRONS_NAMESPACE
 
-/*******************************************************************
- *                         DistilMesonField                        *
- * Receives LapH eigenvectors and perambulator/noise.              *
- * Computes DistilMesonFields by block (of spin-lap dilution size) *
- * and save them to H5 files.                                      *
- *******************************************************************/
-
+/******************************************************************************
+ *                         DistilMesonField                                 *
+ ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MDistil)
 
 class DistilMesonFieldPar: Serializable
@@ -85,8 +81,7 @@ MODULE_REGISTER_TMP(DistilMesonField, TDistilMesonField<FIMPL>, MDistil);
 template <typename FImpl>
 TDistilMesonField<FImpl>::TDistilMesonField(const std::string name)
 : Module<DistilMesonFieldPar>(name)
-{
-}
+{}
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FImpl>
@@ -112,7 +107,8 @@ std::vector<std::string> TDistilMesonField<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TDistilMesonField<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {};
+    std::vector<std::string> out = {getName()};
+    
     return out;
 }
 
@@ -259,7 +255,7 @@ void TDistilMesonField<FImpl>::execute(void)
     const unsigned int nd   = g->Nd();
     const unsigned int nt   = env().getDim(nd - 1);
     typedef std::function<std::string(const unsigned int, const unsigned int, const int, const int)>  FilenameFn;
-    typedef std::function<DistilMesonFieldMetadata<FImpl>(const unsigned int, const unsigned int, const int, const int)>  MetadataFn;
+    typedef std::function<DistilMesonFieldPinnedMetadata<FImpl>(const unsigned int, const unsigned int, const int, const int)>  MetadataFn;
     std::map<Side, DistilVector & > dist_vecs = {{Side::left,dvl}  ,{Side::right,dvr}};
     DistillationNoise &noisel = envGet( DistillationNoise , par().leftNoise);
     DistillationNoise &noiser = envGet( DistillationNoise , par().rightNoise);
@@ -335,7 +331,7 @@ void TDistilMesonField<FImpl>::execute(void)
 
     auto metadataDmfFn = [this, &nt, &nVec, &noisel, &noiser](const unsigned int m, const unsigned int o, const unsigned int nl, const unsigned int nr, DilutionMap lmap, DilutionMap rmap)
     {
-        DistilMesonFieldMetadata<FImpl> md;
+        DistilMesonFieldPinnedMetadata<FImpl> md;
         for (auto pmu: momenta_[m])
         {
             md.Momentum.push_back(pmu);
@@ -447,6 +443,7 @@ void TDistilMesonField<FImpl>::execute(void)
 }
 
 END_MODULE_NAMESPACE
+
 END_HADRONS_NAMESPACE
 
 #endif // Hadrons_MDistil_DistilMesonField_hpp_
