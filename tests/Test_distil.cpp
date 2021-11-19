@@ -122,13 +122,77 @@ int main(int argc, char *argv[])
         perambPar.fullSolveFileName = ""; // only used for perambMode::saveSolve
         perambPar.fullSolve = ""; // only used for perambMode::loadSolve
         perambPar.distilNoise = "exact";
-        perambPar.timeSources = "0 4"; // time slices to invert on
+        perambPar.timeSources = ""; // empty -> invert on all time slices
         perambPar.perambMode = MDistil::pMode::perambOnly; // compute perambulator from lap evecs, discard unsmeared solves
         perambPar.nVec = ""; // empty = match nVec in distilNoise
         perambPar.multiFileFullSolve = ""; // delete?
         application.createModule<MDistil::Perambulator>("Peramb_" + flavour[i] + "_nvec6", perambPar);
     }
-  
+
+
+    // momenta
+    int momSqMax=1; // P^2 max
+    int maxComp = std::sqrt(momSqMax); //floor value of sqrt(P^2) = max single compnent
+    std::vector<std::string> momenta; 
+    // brute force list of momenta
+    for (int i = -maxComp; i <= maxComp; ++i)
+    for (int j = -maxComp; j <= maxComp; ++j)
+    for (int k = -maxComp; k <= maxComp; ++k)
+    {
+       if(i*i+j*j+k*k <= momSqMax)
+       {
+	  std::stringstream mom;
+	  mom << i << " " << j << " " << k;
+	  momenta.push_back(mom.str());
+       }
+    }
+    // meson fields
+
+    // rho-rho field - NB: to get M(\bar{rho},rho), this needs to be multiplied by gamma5!
+    MDistil::DistilMesonField::Par mfPar;
+    mfPar.outPath = "./kpi-mesonfields/rho-rho";
+    mfPar.lapEigenPack = "lapevec";
+    mfPar.leftNoise = "exact";
+    mfPar.rightNoise = "exact";
+    mfPar.noisePairs = {""};
+    mfPar.leftTimeSources = ""; // empty -> invert on all time slices
+    mfPar.rightTimeSources = ""; // empty -> invert on all time slices
+    mfPar.leftPeramb = ""; // rho = no perambulator
+    mfPar.rightPeramb = ""; // rho = no perambulator
+    mfPar.leftVectorStem = "";
+    mfPar.rightVectorStem = "";
+    mfPar.blockSize = 24;
+    mfPar.cacheSize = 4;
+    mfPar.onlyDiagonal = "true";
+    mfPar.gamma = "all";
+    //mfPar.deltaT = 0;
+    mfPar.momenta = momenta;
+    application.createModule<MDistil::DistilMesonField>("RhoRho_nvec6", mfPar);
+    
+    for (unsigned int i = 0; i < flavour.size(); ++i)
+    {
+        // phi-rho fields
+        //MDistil::DistilMesonField::Par mfPar;
+        mfPar.outPath = "./kpi-mesonfields/phi_" + flavour[i] + "-rho";
+        mfPar.lapEigenPack = "lapevec";
+        mfPar.leftNoise = "exact";
+        mfPar.rightNoise = "exact";
+        mfPar.noisePairs = {""};
+        mfPar.leftTimeSources = ""; // empty -> invert on all time slices
+        mfPar.rightTimeSources = ""; // empty -> invert on all time slices
+        mfPar.leftPeramb = "Peramb_" + flavour[i] + "_nvec6";
+        mfPar.rightPeramb = ""; // rho = no perambulator
+        mfPar.leftVectorStem = "";
+        mfPar.rightVectorStem = "";
+        mfPar.blockSize = 24;
+        mfPar.cacheSize = 4;
+        mfPar.onlyDiagonal = "true";
+        mfPar.gamma = "all";
+        //mfPar.deltaT = 0;
+        mfPar.momenta = momenta;
+        application.createModule<MDistil::DistilMesonField>("Phi_" + flavour[i] + "Rho_nvec6", mfPar);
+    }
+
     // execution
     application.saveParameterFile("kpiExact.xml");
     application.run();
