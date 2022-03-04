@@ -53,6 +53,8 @@ public:
                                     OpIIIFlag,      flag);
 };
 
+// See https://arxiv.org/abs/1501.05373 equation 13 for the (Chroma convention) 
+// operator implemented in this module.
 template <typename FImpl, typename GImpl>
 class TRHQInsertionIII: public Module<RHQInsertionIIIPar>
 {
@@ -157,6 +159,8 @@ void TRHQInsertionIII<FImpl, GImpl>::execute(void)
             HADRONS_ERROR(Argument, "Index must be in {0, 1, 2, 3}."); 
     }
     
+    // "Flag" flips between the conventions used in Chroma and a reformulation
+    // using Left and Right derivatives
     auto &out = envGet(PropagatorField, getName());
     if (par().flag == OpIIIFlag::Chroma)
     {     
