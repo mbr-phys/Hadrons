@@ -116,7 +116,7 @@ void TWilsonFlow<GImpl>::execute(void)
         LOG(Message) << "Using adaptive algorithm with " << std::endl;
         mTau = std::stoi(par().maxTau);
     }
-    WilsonFlow<GImpl>  Wflow(par().steps, par().step_size, par().meas_interval);
+    Grid::WilsonFlow<GImpl>  Wflow(par().steps, par().step_size, par().meas_interval);
     auto               &U   = envGet(GaugeField, par().gauge);
     auto               &Uwf = envGet(GaugeField, getName());
 
@@ -128,9 +128,9 @@ void TWilsonFlow<GImpl>::execute(void)
 
     Uwf = U;
     if (mTau > 0) {
-        WF.smear_adaptive(Uwf, Umu, mTau);
+        Wflow.smear_adaptive(Uwf, Umu, mTau);
     } else {
-        WF.smear(Uwf, Umu);
+        Wflow.smear(Uwf, Umu);
     }
     LOG(Message) << "flow time = " << par().steps * par().step_size << " ,"
                  << "         plaquette = " << WilsonLoops<GImpl>::avgPlaquette(Uwf)         << std::endl

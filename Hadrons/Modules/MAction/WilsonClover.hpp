@@ -48,7 +48,7 @@ public:
                                     double     , mass,
 				                    double     , csw_r,
 				                    double     , csw_t,
-                                    double     , cF,
+//                                    double     , cF,
 				                    WilsonAnisotropyCoefficients ,clover_anisotropy,
                                     std::string, boundary,
                                     std::string, twist
@@ -113,8 +113,8 @@ void TWilsonClover<FImpl>::setup(void)
                  << " using gauge field '" << par().gauge << "'" << std::endl;
     LOG(Message) << "Clover term csw_r: " << par().csw_r
                  << " csw_t: " << par().csw_t << std::endl;
-    LOG(Message) << "Boundary improvement coefficient cF = " << par().cF
-                 << std::endl;
+//    LOG(Message) << "Boundary improvement coefficient cF = " << par().cF
+//                 << std::endl;
                  
     auto &U      = envGet(GaugeField, par().gauge);
     auto &grid   = *envGetGrid(FermionField);
@@ -140,8 +140,8 @@ void TWilsonClover<FImpl>::setup(void)
     {
         HADRONS_ERROR(Size, "Wrong number of twist");
     }
-    envCreateDerived(FMat, CompactWilsonCloverFermion<FImpl>, getName(), 1, U, grid,
-                     gridRb, par().mass, par().csw_r, par().csw_t, par().cF,
+    envCreateDerived(FMat, WilsonCloverFermion<FImpl>, getName(), 1, U, grid,
+                     gridRb, par().mass, par().csw_r, par().csw_t,
                      par().clover_anisotropy, implParams); 
 }
 
