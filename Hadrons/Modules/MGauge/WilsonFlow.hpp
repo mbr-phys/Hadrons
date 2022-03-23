@@ -122,9 +122,8 @@ void TWilsonFlow<GImpl>::execute(void)
 
     envGetTmp(GaugeField, Umu);
     Umu = U;
-    LOG(Message) << "flow time = 0," 
-                 << "         plaquette = " << WilsonLoops<GImpl>::avgPlaquette(U) << std::endl
-                 << "    energy density = " << Wflow.energyDensityPlaquette(0,U)   << std::endl;
+    LOG(Message) << "flow time = 0, plaquette = " << WilsonLoops<GImpl>::avgPlaquette(U) 
+                 << ", energy density = " << Wflow.energyDensityPlaquette(0,U)   << std::endl;
 
     Uwf = U;
     if (mTau > 0) {
@@ -132,9 +131,9 @@ void TWilsonFlow<GImpl>::execute(void)
     } else {
         Wflow.smear(Uwf, Umu);
     }
-    LOG(Message) << "flow time = " << par().steps * par().step_size << " ,"
-                 << "         plaquette = " << WilsonLoops<GImpl>::avgPlaquette(Uwf)         << std::endl
-                 << "    energy density = " << Wflow.energyDensityPlaquette(par().steps,Uwf) << std::endl;
+    LOG(Message) << "flow time = " << par().steps * par().step_size
+                 << ", plaquette = " << WilsonLoops<GImpl>::avgPlaquette(Uwf)
+                 << ", energy density = " << Wflow.energyDensityPlaquette(par().steps,Uwf) << std::endl;
 }
 
 END_MODULE_NAMESPACE
