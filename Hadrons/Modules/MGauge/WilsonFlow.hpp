@@ -66,6 +66,18 @@ public:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    typedef typename GImpl::GaugeLinkField GaugeMat;
+    typedef typename GImpl::GaugeField GaugeLorentz;
+    typedef typename GImpl::ComplexField ComplexField;
+    // clover
+    void dirClover(GaugeMat &clov, const std::vector<GaugeMat> &U, const int mu, const int nu);
+    void traceDirClover(ComplexField &clov, const std::vector<GaugeMat> &U, const int mu, const int nu);
+    void siteClover(ComplexField &Clov, const std::vector<GaugeMat> &U);
+    RealD avgClover(const GaugeLorentz &Umu);
+    void status(double time, GaugeField &Umu, WilsonGaugeAction<GImpl> &SG);
+    void evolve_step(GaugeField &U, WilsonGaugeAction<GImpl> &SG);
+    void evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus, WilsonGaugeAction<GImpl> &SG);
 };
 
 MODULE_REGISTER_TMP(WilsonFlow, TWilsonFlow<GIMPL>, MGauge);
@@ -104,6 +116,146 @@ void TWilsonFlow<GImpl>::setup(void)
     envTmpLat(GaugeField, "Umu");
 }
 
+// clover //////////////////////////////////////////////////////////////////////
+template <typename GImpl>
+void TWilsonFlow<GImpl>::dirClover(GaugeMat &clov, const std::vector<GaugeMat> &U, const int mu, const int nu)
+{
+    GaugeMat F(U[0].Grid());
+    // Upper Right
+    F = U[mu] * Cshift(U[nu],mu,1) * adj(Cshift(U[mu],nu,1)) * adj(U[nu]);
+
+    // Upper Left
+    F += U[nu] * adj(Cshift(Cshift(U[mu],mu,-1),nu,1)) * adj(Cshift(U[nu],mu,-1)) * Cshift(U[mu],mu,-1);
+
+    // Lower Left
+    F += adj(Cshift(U[mu],mu,-1)) * adj(Cshift(Cshift(U[nu],mu,-1),nu,-1)) * Cshift(Cshift(U[mu],mu,-1),nu,-1) * Cshift(U[nu],nu,-1);
+
+    // Lower Right
+    F += adj(Cshift(U[nu],nu,-1)) * Cshift(U[mu],nu,-1) * Cshift(Cshift(U[nu],mu,1),nu,-1) * adj(U[mu]);
+
+    // Clover
+    ComplexD den(0.0,0.125);
+    clov = den*(F - adj(F));
+}
+
+template <typename GImpl>
+void TWilsonFlow<GImpl>::traceDirClover(ComplexField &clov, const std::vector<GaugeMat> &U, const int mu, const int nu) 
+{
+    GaugeMat sp(U[0].Grid());
+    dirClover(sp, U, mu, nu);
+
+    GaugeMat scaledUnit(U[0].Grid());
+    scaledUnit = (1.0/Nc) * (adj(U[mu]) * U[mu]);
+
+    GaugeMat sp2(U[0].Grid());
+    sp2 = sp - trace(sp) * scaledUnit;
+
+    clov = trace(sp2 * sp2);
+}
+
+template <typename GImpl>
+void TWilsonFlow<GImpl>::siteClover(ComplexField &Clov, const std::vector<GaugeMat> &U)
+{
+    ComplexField siteClov(U[0].Grid());
+    Clov = Zero();
+    for (int mu = 1; mu < Nd; mu++) {
+        for (int nu = 0; nu < mu; nu++) {
+            traceDirClover(siteClov, U, mu, nu);
+            Clov = Clov + siteClov;
+        }
+    }
+}
+
+template <typename GImpl>
+RealD TWilsonFlow<GImpl>::avgClover(const GaugeLorentz &Umu) 
+{
+    std::vector<GaugeMat> U(Nd, Umu.Grid());
+    for (int mu = 0; mu < Nd; mu++) {
+        U[mu] = PeekIndex<LorentzIndex>(Umu, mu);
+    }
+    ComplexField Clov(Umu.Grid());
+
+    siteClover(Clov, U);
+    auto Tc = sum(Clov);
+    auto c = TensorRemove(Tc);
+
+    double vol = Umu.Grid()->gSites();
+
+    return c.real() / vol;
+}
+
+template <typename GImpl>
+void TWilsonFlow<GImpl>::evolve_step(GaugeField &U, WilsonGaugeAction<GImpl> &SG) 
+{
+    GaugeField Z(U.Grid());
+    GaugeField tmp(U.Grid());
+    SG.deriv(U, Z);                                
+    Z *= 0.25;                                          // Z0 = 1/4 * F(U)
+    GImpl::update_field(Z, U, -2.0*par().step_size);    // U = W1 = exp(ep*Z0)*W0
+
+    Z *= -17.0/8.0;
+    SG.deriv(U, tmp); Z += tmp;                         // -17/32*Z0 + Z1
+    Z *= 8.0/9.0;                                       // Z = -17/36*Z0 +8/9*Z1
+    GImpl::update_field(Z, U, -2.0*par().step_size);    // U_= W2 = exp(ep*Z)*W1
+
+    Z *= -4.0/3.0;
+    SG.deriv(U, tmp); Z += tmp;                         // 4/3*(17/36*Z0 -8/9*Z1) + Z2
+    Z *= 3.0/4.0;                                       // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
+    GImpl::update_field(Z, U, -2.0*par().step_size);    // V(t+e) = exp(ep*Z)*W2
+}
+
+template <typename GImpl>
+void TWilsonFlow<GImpl>::evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus, WilsonGaugeAction<GImpl> &SG) 
+{
+    if (maxTau - taus < epsilon){
+        epsilon = maxTau-taus;
+    }
+    //std::cout << GridLogMessage << "Integration epsilon : " << epsilon << std::endl;
+    GaugeField Z(U.Grid());
+    GaugeField Zprime(U.Grid());
+    GaugeField tmp(U.Grid()), Uprime(U.Grid());
+    Uprime = U;
+    SG.deriv(U, Z);
+    Zprime = -Z;
+    Z *= 0.25;                                  // Z0 = 1/4 * F(U)
+    GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
+
+    Z *= -17.0/8.0;
+    SG.deriv(U, tmp); Z += tmp;                 // -17/32*Z0 +Z1
+    Zprime += 2.0*tmp;
+    Z *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
+    GImpl::update_field(Z, U, -2.0*epsilon);    // U_= W2 = exp(ep*Z)*W1
+
+    Z *= -4.0/3.0;
+    SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) +Z2
+    Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
+    GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2      
+    
+    // Ramos
+    GImpl::update_field(Zprime, Uprime, -2.0*epsilon); // V'(t+e) = exp(ep*Z')*W0
+    // Compute distance as norm^2 of the difference
+    GaugeField diffU = U - Uprime;
+    RealD diff = norm2(diffU);   
+    // adjust integration step  
+
+    taus += epsilon;
+    //std::cout << GridLogMessage << "Adjusting integration step with distance: " << diff << std::endl;
+
+    epsilon = epsilon*0.95*std::pow(1e-4/diff,1./3.);
+    //std::cout << GridLogMessage << "New epsilon : " << epsilon << std::endl;
+}
+
+template <typename GImpl>
+void TWilsonFlow<GImpl>::status(double time, GaugeField &Umu, WilsonGaugeAction<GImpl> &SG)
+{
+    LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
+                 << " top. charge: " << std::setprecision(16) << std::scientific << WilsonLoops<GImpl>::TopologicalCharge(Umu)
+                 << " plaquette: " << std::setprecision(16) << WilsonLoops<GImpl>::avgPlaquette(Umu) 
+                 << " rectangle: " << std::setprecision(16) << WilsonLoops<GImpl>::avgRectangle(Umu) 
+                 << " clover: " << std::setprecision(16) << avgClover(Umu)
+                 << " action: " << std::setprecision(16) << SG.S(Umu) << std::endl;
+}
+
 // execution ///////////////////////////////////////////////////////////////////
 template <typename GImpl>
 void TWilsonFlow<GImpl>::execute(void)
@@ -111,29 +263,41 @@ void TWilsonFlow<GImpl>::execute(void)
     LOG(Message) << "Setting up Wilson Flow on '" << par().gauge << "' with " << par().steps
                  << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
 
-    int mTau = -1;
+    RealD mTau = -1.0;
     if(!par().maxTau.empty()) {
-        LOG(Message) << "Using adaptive algorithm with " << std::endl;
-        mTau = std::stoi(par().maxTau);
+        LOG(Message) << "Using adaptive algorithm with maxTau = " << par().maxTau << std::endl;
+        mTau = (RealD)std::stoi(par().maxTau);
     }
-    Grid::WilsonFlow<GImpl>  Wflow(par().steps, par().step_size, par().meas_interval);
+//    Grid::WilsonFlow<GImpl>  Wflow(par().steps, par().step_size, par().meas_interval);
     auto               &U   = envGet(GaugeField, par().gauge);
     auto               &Uwf = envGet(GaugeField, getName());
 
     envGetTmp(GaugeField, Umu);
     Umu = U;
-    LOG(Message) << "flow time = 0, plaquette = " << WilsonLoops<GImpl>::avgPlaquette(U) 
-                 << ", energy density = " << Wflow.energyDensityPlaquette(0,U)   << std::endl;
 
     Uwf = U;
+    double time = 0;
+    WilsonGaugeAction<GImpl> SG(3.0);
+    status(time,U,SG);
     if (mTau > 0) {
-        Wflow.smear_adaptive(Uwf, Umu, mTau);
+        RealD epsilon = par().step_size;
+        RealD taus = par().step_size;
+        unsigned int step = 0;
+        do {
+            step++;
+            evolve_step_adaptive(Uwf, mTau, epsilon, taus, SG);
+            if (step % par().meas_interval == 0) {
+                status(taus,Uwf,SG);
+            }
+        } while (taus < mTau);
     } else {
-        Wflow.smear(Uwf, Umu);
+        for (unsigned int step = 1; step <= par().steps; step++) {
+            evolve_step(Uwf,SG);
+            if (step % par().meas_interval == 0) {
+                status(step*par().step_size,Uwf,SG);
+            }
+        }
     }
-    LOG(Message) << "flow time = " << par().steps * par().step_size
-                 << ", plaquette = " << WilsonLoops<GImpl>::avgPlaquette(Uwf)
-                 << ", energy density = " << Wflow.energyDensityPlaquette(par().steps,Uwf) << std::endl;
 }
 
 END_MODULE_NAMESPACE
