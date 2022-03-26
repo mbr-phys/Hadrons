@@ -71,9 +71,7 @@ private:
     typedef typename GImpl::GaugeField GaugeLorentz;
     typedef typename GImpl::ComplexField ComplexField;
     // clover
-    void dirClover(GaugeMat &clov, const std::vector<GaugeMat> &U, const int mu, const int nu);
-    void traceDirClover(ComplexField &clov, const std::vector<GaugeMat> &U, const int mu, const int nu);
-    void siteClover(ComplexField &Clov, const std::vector<GaugeMat> &U);
+    void siteClover(ComplexField &Clov, const GaugeLorentz &U);
     RealD avgClover(const GaugeLorentz &Umu);
     void status(double time, GaugeField &Umu, WilsonGaugeAction<GImpl> &SG);
     void evolve_step(GaugeField &U, WilsonGaugeAction<GImpl> &SG);
@@ -118,50 +116,17 @@ void TWilsonFlow<GImpl>::setup(void)
 
 // clover //////////////////////////////////////////////////////////////////////
 template <typename GImpl>
-void TWilsonFlow<GImpl>::dirClover(GaugeMat &clov, const std::vector<GaugeMat> &U, const int mu, const int nu)
+void TWilsonFlow<GImpl>::siteClover(ComplexField &Clov, const GaugeLorentz &U)
 {
-    GaugeMat F(U[0].Grid());
-    // Upper Right
-    F = U[mu] * Cshift(U[nu],mu,1) * adj(Cshift(U[mu],nu,1)) * adj(U[nu]);
-
-    // Upper Left
-    F += U[nu] * adj(Cshift(Cshift(U[mu],mu,-1),nu,1)) * adj(Cshift(U[nu],mu,-1)) * Cshift(U[mu],mu,-1);
-
-    // Lower Left
-    F += adj(Cshift(U[mu],mu,-1)) * adj(Cshift(Cshift(U[nu],mu,-1),nu,-1)) * Cshift(Cshift(U[mu],mu,-1),nu,-1) * Cshift(U[nu],nu,-1);
-
-    // Lower Right
-    F += adj(Cshift(U[nu],nu,-1)) * Cshift(U[mu],nu,-1) * Cshift(Cshift(U[nu],mu,1),nu,-1) * adj(U[mu]);
-
-    // Clover
-    ComplexD den(0.0,0.125);
-    clov = den*(F - adj(F));
-}
-
-template <typename GImpl>
-void TWilsonFlow<GImpl>::traceDirClover(ComplexField &clov, const std::vector<GaugeMat> &U, const int mu, const int nu) 
-{
-    GaugeMat sp(U[0].Grid());
-    dirClover(sp, U, mu, nu);
-
-    GaugeMat scaledUnit(U[0].Grid());
-    scaledUnit = (1.0/Nc) * (adj(U[mu]) * U[mu]);
-
-    GaugeMat sp2(U[0].Grid());
-    sp2 = sp - trace(sp) * scaledUnit;
-
-    clov = trace(sp2 * sp2);
-}
-
-template <typename GImpl>
-void TWilsonFlow<GImpl>::siteClover(ComplexField &Clov, const std::vector<GaugeMat> &U)
-{
-    ComplexField siteClov(U[0].Grid());
+    GaugeMat Fmn(U.Grid()), Cmn(U.Grid()), scaledUnit(U.Grid()), Umu(U.Grid());
     Clov = Zero();
     for (int mu = 1; mu < Nd; mu++) {
         for (int nu = 0; nu < mu; nu++) {
-            traceDirClover(siteClov, U, mu, nu);
-            Clov = Clov + siteClov;
+            Umu = PeekIndex<LorentzIndex>(U, mu);
+            scaledUnit = (1.0/Nc) * (adj(Umu) * Umu);
+            WilsonLoops<GImpl>::FieldStrength(Fmn, U, mu, nu);
+            Cmn = Fmn - trace(Fmn) * scaledUnit;
+            Clov = Clov - trace(Cmn * Cmn);
         }
     }
 }
@@ -169,13 +134,9 @@ void TWilsonFlow<GImpl>::siteClover(ComplexField &Clov, const std::vector<GaugeM
 template <typename GImpl>
 RealD TWilsonFlow<GImpl>::avgClover(const GaugeLorentz &Umu) 
 {
-    std::vector<GaugeMat> U(Nd, Umu.Grid());
-    for (int mu = 0; mu < Nd; mu++) {
-        U[mu] = PeekIndex<LorentzIndex>(Umu, mu);
-    }
     ComplexField Clov(Umu.Grid());
 
-    siteClover(Clov, U);
+    siteClover(Clov, Umu);
     auto Tc = sum(Clov);
     auto c = TensorRemove(Tc);
 
