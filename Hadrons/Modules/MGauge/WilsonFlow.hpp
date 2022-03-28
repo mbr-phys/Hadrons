@@ -211,10 +211,10 @@ void TWilsonFlow<GImpl>::status(double time, GaugeField &Umu, WilsonGaugeAction<
 {
     LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
                  << " top. charge: " << std::setprecision(16) << std::scientific << WilsonLoops<GImpl>::TopologicalCharge(Umu)
-                 << " plaquette: " << std::setprecision(16) << WilsonLoops<GImpl>::avgPlaquette(Umu) 
-                 << " rectangle: " << std::setprecision(16) << WilsonLoops<GImpl>::avgRectangle(Umu) 
-                 << " clover: " << std::setprecision(16) << avgClover(Umu)
-                 << " action: " << std::setprecision(16) << SG.S(Umu) << std::endl;
+                 << " plaquette: " << WilsonLoops<GImpl>::avgPlaquette(Umu) 
+                 << " rectangle: " << WilsonLoops<GImpl>::avgRectangle(Umu) 
+                 << " clover: " << avgClover(Umu)
+                 << " action: " << SG.S(Umu) << std::endl;
 }
 
 // execution ///////////////////////////////////////////////////////////////////
