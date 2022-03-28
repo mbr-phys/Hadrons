@@ -1,5 +1,5 @@
 /*
- * WilsonFlow.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * GradientFlow.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2022
  *
@@ -24,10 +24,12 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MGauge/WilsonFlow.hpp>
+#include <Hadrons/Modules/MGauge/GradientFlow.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
 using namespace MGauge;
 
-template class Grid::Hadrons::MGauge::TWilsonFlow<GIMPL>;
+template class Grid::Hadrons::MGauge::TGradientFlow<GIMPL,WilsonGaugeAction<GIMPL>>;
+template class Grid::Hadrons::MGauge::TGradientFlow<GIMPL,SymanzikGaugeAction<GIMPL>>;
+template class Grid::Hadrons::MGauge::TGradientFlow<GIMPL,ZeuthenGaugeAction<GIMPL>>;

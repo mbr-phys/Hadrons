@@ -1,5 +1,5 @@
 /*
- * WilsonFlow.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * GradientFlow.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2022
  *
@@ -24,8 +24,8 @@
  */
 
 /*  END LEGAL */
-#ifndef Hadrons_MGauge_WilsonFlow_hpp_
-#define Hadrons_MGauge_WilsonFlow_hpp_
+#ifndef Hadrons_MGauge_GradientFlow_hpp_
+#define Hadrons_MGauge_GradientFlow_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -34,14 +34,66 @@
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                               Wilson Flow                                  *
+ *                               Gradient Flow                                  *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MGauge)
 
-class WilsonFlowPar: Serializable
+template <class GImpl>
+class ZeuthenGaugeAction {
+public:
+    INHERIT_GIMPL_TYPES(GImpl);
+    
+    RealD beta;
+    SymanzikGaugeAction<GImpl> SG;
+
+    ZeuthenGaugeAction(RealD b): beta(b),SG(SymanzikGaugeAction<GImpl>(b)) {};
+
+    virtual std::string action_name(){return "ZeuthenGaugeAction";}
+
+    virtual RealD S(const GaugeField &U) {
+        return SG.S(U);
+    };
+
+    virtual void deriv(const GaugeField &Umu, GaugeField &dSdU) {
+                                              //  beta = 3.0, cl = -1.0/12.0 -> Symanzik
+        RealD factor_p = 5.0/RealD(Nc)*0.5;   //   5.0 = beta*(1.0-8.0*cl)
+        RealD factor_r = -0.25/RealD(Nc)*0.5; // -0.25 = beta*cl
+
+        GridBase *grid = Umu.Grid();
+
+        std::vector<GaugeLinkField> U (Nd,grid);
+        std::vector<GaugeLinkField> U2(Nd,grid);
+
+        for(int mu=0;mu<Nd;mu++){
+            U[mu] = PeekIndex<LorentzIndex>(Umu,mu);
+            WilsonLoops<GImpl>::RectStapleDouble(U2[mu],U[mu],mu);
+        }
+
+        GaugeLinkField dSdU_mu(grid);
+        GaugeLinkField staple(grid);
+        GaugeLinkField tmp(grid),tmq(grid),tmr(grid);
+
+        for (int mu=0; mu < Nd; mu++){
+            // Staple in direction mu
+            WilsonLoops<GImpl>::Staple(staple,Umu,mu);
+            tmp = Ta(U[mu]*staple)*factor_p;
+
+            WilsonLoops<GImpl>::RectStaple(Umu,staple,U2,U,mu);
+            tmp = tmp + Ta(U[mu]*staple)*factor_r;
+
+            tmq = (adj(Cshift(U[mu],mu,-1)) * Cshift(tmp,mu,-1) * Cshift(U[mu],mu,-1));
+            tmr = (U[mu] * Cshift(tmp,mu,1) * adj(U[mu]));
+
+            dSdU_mu = 5.0/6.0*tmp + 1.0/12.0*tmq + 1.0/12.0*tmr;
+            PokeIndex<LorentzIndex>(dSdU, dSdU_mu, mu);
+        }
+    };
+};
+
+class GradientFlowPar: Serializable
 {
 public:
-    GRID_SERIALIZABLE_CLASS_MEMBERS(WilsonFlowPar,
+    GRID_SERIALIZABLE_CLASS_MEMBERS(GradientFlowPar,
                                     std::string, gauge,
                                     int, steps,
                                     double, step_size,
@@ -49,16 +101,16 @@ public:
                                     std::string, maxTau); 
 };
 
-template <typename GImpl>
-class TWilsonFlow: public Module<WilsonFlowPar>
+template <typename GImpl,typename FlowAction>
+class TGradientFlow: public Module<GradientFlowPar>
 {
 public:
     GAUGE_TYPE_ALIASES(GImpl,);
 public:
     // constructor
-    TWilsonFlow(const std::string name);
+    TGradientFlow(const std::string name);
     // destructor
-    virtual ~TWilsonFlow(void) {};
+    virtual ~TGradientFlow(void) {};
     // dependency relation
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
@@ -70,36 +122,42 @@ private:
     typedef typename GImpl::GaugeLinkField GaugeMat;
     typedef typename GImpl::GaugeField GaugeLorentz;
     typedef typename GImpl::ComplexField ComplexField;
+    // action
+    FlowAction SG = FlowAction(3.0);
     // clover
     void siteClover(ComplexField &Clov, const GaugeLorentz &U);
     RealD avgClover(const GaugeLorentz &Umu);
-    void status(double time, GaugeField &Umu, WilsonGaugeAction<GImpl> &SG);
-    void evolve_step(GaugeField &U, WilsonGaugeAction<GImpl> &SG);
-    void evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus, WilsonGaugeAction<GImpl> &SG);
+    // gauge observable measurements at flow time
+    void status(double time, GaugeField &Umu);
+    // gauge field evolutions
+    void evolve_step(GaugeField &U);
+    void evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus);
 };
 
-MODULE_REGISTER_TMP(WilsonFlow, TWilsonFlow<GIMPL>, MGauge);
+MODULE_REGISTER_TMP(WilsonFlow, ARG(TGradientFlow<GIMPL,WilsonGaugeAction<GIMPL>>), MGauge);
+MODULE_REGISTER_TMP(SymanzikFlow, ARG(TGradientFlow<GIMPL,SymanzikGaugeAction<GIMPL>>), MGauge);
+MODULE_REGISTER_TMP(ZeuthenFlow, ARG(TGradientFlow<GIMPL,ZeuthenGaugeAction<GIMPL>>), MGauge);
 
 /******************************************************************************
- *                     TWilsonFlow implementation                          *
+ *                     TGradientFlow implementation                          *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename GImpl>
-TWilsonFlow<GImpl>::TWilsonFlow(const std::string name)
-: Module<WilsonFlowPar>(name)
+template <typename GImpl,typename FlowAction>
+TGradientFlow<GImpl,FlowAction>::TGradientFlow(const std::string name)
+: Module<GradientFlowPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename GImpl>
-std::vector<std::string> TWilsonFlow<GImpl>::getInput(void)
+template <typename GImpl,typename FlowAction>
+std::vector<std::string> TGradientFlow<GImpl,FlowAction>::getInput(void)
 {
     std::vector<std::string> in = {par().gauge};
     
     return in;
 }
 
-template <typename GImpl>
-std::vector<std::string> TWilsonFlow<GImpl>::getOutput(void)
+template <typename GImpl,typename FlowAction>
+std::vector<std::string> TGradientFlow<GImpl,FlowAction>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
     
@@ -107,16 +165,16 @@ std::vector<std::string> TWilsonFlow<GImpl>::getOutput(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename GImpl>
-void TWilsonFlow<GImpl>::setup(void)
+template <typename GImpl,typename FlowAction>
+void TGradientFlow<GImpl,FlowAction>::setup(void)
 {
     envCreateLat(GaugeField, getName());
     envTmpLat(GaugeField, "Umu");
 }
 
 // clover //////////////////////////////////////////////////////////////////////
-template <typename GImpl>
-void TWilsonFlow<GImpl>::siteClover(ComplexField &Clov, const GaugeLorentz &U)
+template <typename GImpl,typename FlowAction>
+void TGradientFlow<GImpl,FlowAction>::siteClover(ComplexField &Clov, const GaugeLorentz &U)
 {
     GaugeMat Fmn(U.Grid()), Cmn(U.Grid()), scaledUnit(U.Grid()), Umu(U.Grid());
     Clov = Zero();
@@ -131,8 +189,8 @@ void TWilsonFlow<GImpl>::siteClover(ComplexField &Clov, const GaugeLorentz &U)
     }
 }
 
-template <typename GImpl>
-RealD TWilsonFlow<GImpl>::avgClover(const GaugeLorentz &Umu) 
+template <typename GImpl,typename FlowAction>
+RealD TGradientFlow<GImpl,FlowAction>::avgClover(const GaugeLorentz &Umu) 
 {
     ComplexField Clov(Umu.Grid());
 
@@ -145,8 +203,8 @@ RealD TWilsonFlow<GImpl>::avgClover(const GaugeLorentz &Umu)
     return c.real() / vol;
 }
 
-template <typename GImpl>
-void TWilsonFlow<GImpl>::evolve_step(GaugeField &U, WilsonGaugeAction<GImpl> &SG) 
+template <typename GImpl,typename FlowAction>
+void TGradientFlow<GImpl,FlowAction>::evolve_step(GaugeField &U) 
 {
     GaugeField Z(U.Grid());
     GaugeField tmp(U.Grid());
@@ -165,8 +223,8 @@ void TWilsonFlow<GImpl>::evolve_step(GaugeField &U, WilsonGaugeAction<GImpl> &SG
     GImpl::update_field(Z, U, -2.0*par().step_size);    // V(t+e) = exp(ep*Z)*W2
 }
 
-template <typename GImpl>
-void TWilsonFlow<GImpl>::evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus, WilsonGaugeAction<GImpl> &SG) 
+template <typename GImpl,typename FlowAction>
+void TGradientFlow<GImpl,FlowAction>::evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus) 
 {
     if (maxTau - taus < epsilon){
         epsilon = maxTau-taus;
@@ -206,8 +264,8 @@ void TWilsonFlow<GImpl>::evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD
     //std::cout << GridLogMessage << "New epsilon : " << epsilon << std::endl;
 }
 
-template <typename GImpl>
-void TWilsonFlow<GImpl>::status(double time, GaugeField &Umu, WilsonGaugeAction<GImpl> &SG)
+template <typename GImpl,typename FlowAction>
+void TGradientFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu)
 {
     LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
                  << " top. charge: " << std::setprecision(16) << std::scientific << WilsonLoops<GImpl>::TopologicalCharge(Umu)
@@ -218,10 +276,17 @@ void TWilsonFlow<GImpl>::status(double time, GaugeField &Umu, WilsonGaugeAction<
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename GImpl>
-void TWilsonFlow<GImpl>::execute(void)
+template <typename GImpl,typename FlowAction>
+void TGradientFlow<GImpl,FlowAction>::execute(void)
 {
-    LOG(Message) << "Setting up Wilson Flow on '" << par().gauge << "' with " << par().steps
+    std::string type = SG.action_name();
+    std::string ga = "GaugeAction";
+    std::string::size_type i = type.find(ga);
+    if (i != std::string::npos) {
+        type.erase(i, ga.length());
+    }
+
+    LOG(Message) << "Setting up " << type << " Flow on '" << par().gauge << "' with " << par().steps
                  << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
 
     RealD mTau = -1.0;
@@ -229,7 +294,6 @@ void TWilsonFlow<GImpl>::execute(void)
         LOG(Message) << "Using adaptive algorithm with maxTau = " << par().maxTau << std::endl;
         mTau = (RealD)std::stoi(par().maxTau);
     }
-//    Grid::WilsonFlow<GImpl>  Wflow(par().steps, par().step_size, par().meas_interval);
     auto               &U   = envGet(GaugeField, par().gauge);
     auto               &Uwf = envGet(GaugeField, getName());
 
@@ -238,24 +302,23 @@ void TWilsonFlow<GImpl>::execute(void)
 
     Uwf = U;
     double time = 0;
-    WilsonGaugeAction<GImpl> SG(3.0);
-    status(time,U,SG);
+    status(time,U);
     if (mTau > 0) {
         RealD epsilon = par().step_size;
         RealD taus = par().step_size;
         unsigned int step = 0;
         do {
             step++;
-            evolve_step_adaptive(Uwf, mTau, epsilon, taus, SG);
+            evolve_step_adaptive(Uwf, mTau, epsilon, taus);
             if (step % par().meas_interval == 0) {
-                status(taus,Uwf,SG);
+                status(taus,Uwf);
             }
         } while (taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
-            evolve_step(Uwf,SG);
+            evolve_step(Uwf);
             if (step % par().meas_interval == 0) {
-                status(step*par().step_size,Uwf,SG);
+                status(step*par().step_size,Uwf);
             }
         }
     }
@@ -265,4 +328,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MGauge_WilsonFlow_hpp_
+#endif // Hadrons_MGauge_GradientFlow_hpp_
