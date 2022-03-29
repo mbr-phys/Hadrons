@@ -94,6 +94,7 @@ class GradientFlowPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(GradientFlowPar,
+                                    std::string, output,
                                     std::string, gauge,
                                     int, steps,
                                     double, step_size,
@@ -106,6 +107,16 @@ class TGradientFlow: public Module<GradientFlowPar>
 {
 public:
     GAUGE_TYPE_ALIASES(GImpl,);
+    class Result : Serializable
+    {
+    public:
+        GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
+                                        std::vector<std::vector<RealD>>, plaquette,
+                                        std::vector<std::vector<RealD>>, rectangle,
+                                        std::vector<std::vector<RealD>>, clover,
+                                        std::vector<std::vector<RealD>>, topcharge,
+                                        std::vector<std::vector<RealD>>, action);
+    };
 public:
     // constructor
     TGradientFlow(const std::string name);
@@ -128,7 +139,7 @@ private:
     void siteClover(ComplexField &Clov, const GaugeLorentz &U);
     RealD avgClover(const GaugeLorentz &Umu);
     // gauge observable measurements at flow time
-    void status(double time, GaugeField &Umu);
+    void status(double time, GaugeField &Umu, Result &result, int step);
     // gauge field evolutions
     void evolve_step(GaugeField &U);
     void evolve_step_adaptive(GaugeField &U, RealD maxTau, RealD &epsilon, RealD &taus);
@@ -265,14 +276,28 @@ void TGradientFlow<GImpl,FlowAction>::evolve_step_adaptive(GaugeField &U, RealD 
 }
 
 template <typename GImpl,typename FlowAction>
-void TGradientFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu)
+void TGradientFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu, Result &result, int step)
 {
-    LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
-                 << " top. charge: " << std::setprecision(16) << std::scientific << WilsonLoops<GImpl>::TopologicalCharge(Umu)
-                 << " plaquette: " << WilsonLoops<GImpl>::avgPlaquette(Umu) 
-                 << " rectangle: " << WilsonLoops<GImpl>::avgRectangle(Umu) 
-                 << " clover: " << avgClover(Umu)
-                 << " action: " << SG.S(Umu) << std::endl;
+    RealD Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
+    RealD plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
+    RealD rect = WilsonLoops<GImpl>::avgRectangle(Umu);
+    RealD clov = avgClover(Umu);
+    RealD act = SG.S(Umu);
+
+    if (par().output.length()) {
+        result.plaquette[step] = std::vector<RealD>({time,plaq});
+        result.rectangle[step] = std::vector<RealD>({time,rect});
+        result.clover[step]    = std::vector<RealD>({time,clov});
+        result.topcharge[step] = std::vector<RealD>({time,Q});
+        result.action[step]    = std::vector<RealD>({time,act});
+    } else {
+        LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
+                     << " top. charge: " << std::setprecision(16) << std::scientific << Q
+                     << " plaquette: " << plaq
+                     << " rectangle: " << rect
+                     << " clover: " << clov
+                     << " action: " << act << std::endl;
+    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -294,6 +319,14 @@ void TGradientFlow<GImpl,FlowAction>::execute(void)
         LOG(Message) << "Using adaptive algorithm with maxTau = " << par().maxTau << std::endl;
         mTau = (RealD)std::stoi(par().maxTau);
     }
+
+    Result result;
+    result.plaquette.resize(1+par().steps);
+    result.rectangle.resize(1+par().steps);
+    result.clover.resize(1+par().steps);
+    result.topcharge.resize(1+par().steps);
+    result.action.resize(1+par().steps);
+
     auto               &U   = envGet(GaugeField, par().gauge);
     auto               &Uwf = envGet(GaugeField, getName());
 
@@ -302,7 +335,7 @@ void TGradientFlow<GImpl,FlowAction>::execute(void)
 
     Uwf = U;
     double time = 0;
-    status(time,U);
+    status(time,U,result,0);
     if (mTau > 0) {
         RealD epsilon = par().step_size;
         RealD taus = par().step_size;
@@ -311,16 +344,19 @@ void TGradientFlow<GImpl,FlowAction>::execute(void)
             step++;
             evolve_step_adaptive(Uwf, mTau, epsilon, taus);
             if (step % par().meas_interval == 0) {
-                status(taus,Uwf);
+                status(taus,Uwf,result,step);
             }
         } while (taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
             evolve_step(Uwf);
             if (step % par().meas_interval == 0) {
-                status(step*par().step_size,Uwf);
+                status(step*par().step_size,Uwf,result,step);
             }
         }
+    }
+    if (par().output.length()) {
+        saveResult(par().output,"flow",result);
     }
 }
 
