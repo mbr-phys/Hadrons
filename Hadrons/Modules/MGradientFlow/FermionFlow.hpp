@@ -206,6 +206,10 @@ void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::execute(void)
     q2wf = q2;
 
     double time = 0;
+    auto &q1i = envGet(PropagatorField1, getName()+"_q1_0");
+    auto &q2i = envGet(PropagatorField2, getName()+"_q2_0");
+    q1i = q1;
+    q2i = q2;
     status(time,U,Uresult,0);
     Evolution<GImpl,FlowAction> evolve(3.0, par().step_size, mTau, par().step_size);
     if (mTau > 0) {

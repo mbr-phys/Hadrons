@@ -207,9 +207,11 @@ class Evolution {
         template <typename FImpl>
         void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, FImpl &prop) {
             // is it -2*epsilon or just epsilon here?
-            FImpl psi1 = prop + (-2.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
-            FImpl psi2 = prop + 8.0*(-2.0*epsilon/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - 2.0*(-2.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
-            FImpl psi3 = psi1 + 3.0*(-2.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
+            //RealD eps = -2.0*epsilon; 
+            RealD eps = epsilon; 
+            FImpl psi1 = prop + (eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
+            FImpl psi2 = prop + (8.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - (2.0*eps/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
+            FImpl psi3 = psi1 + (3.0*eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
 
             prop = psi3;
         };
