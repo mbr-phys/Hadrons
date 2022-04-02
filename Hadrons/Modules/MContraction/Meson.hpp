@@ -67,6 +67,7 @@ public:
                                     std::string, q2,
                                     std::string, gammas,
                                     std::string, sink,
+                                    std::string, group,
                                     std::string, output);
 };
 
@@ -85,6 +86,8 @@ public:
                                         Gamma::Algebra, gamma_snk,
                                         Gamma::Algebra, gamma_src,
                                         std::vector<Complex>, corr);
+        Result() {};
+        Result(uint16_t dummy) {};
     };
 public:
     // constructor
@@ -153,6 +156,8 @@ template <typename FImpl1, typename FImpl2>
 std::vector<std::string> TMeson<FImpl1, FImpl2>::getOutput(void)
 {
     std::vector<std::string> output = {};
+    if (!par().output.length())
+        output.push_back(getName());
     
     return output;
 }
@@ -160,7 +165,11 @@ std::vector<std::string> TMeson<FImpl1, FImpl2>::getOutput(void)
 template <typename FImpl1, typename FImpl2>
 std::vector<std::string> TMeson<FImpl1, FImpl2>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {resultFilename(par().output)};
+    std::vector<std::string> output = {};
+    if (par().output.length())
+    { 
+        output.push_back(resultFilename(par().output));
+    }
     
     return output;
 }
@@ -170,6 +179,11 @@ template <typename FImpl1, typename FImpl2>
 void TMeson<FImpl1, FImpl2>::setup(void)
 {
     envTmpLat(LatticeComplex, "c");
+
+    std::vector<GammaPair> gammaList;
+    parseGammaString(gammaList);
+
+    envCreate(std::vector<Result>, getName(), 1, gammaList.size(), 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -249,7 +263,17 @@ void TMeson<FImpl1, FImpl2>::execute(void)
             }
         }
     }
-    saveResult(par().output, "meson", result);
+
+    
+    if (par().output.length())
+    {
+        saveResult(par().output, par().group, result);
+    }
+    else
+    {
+        auto &out = envGet(std::vector<Result>, getName());
+        out = result;
+    }
 }
 
 END_MODULE_NAMESPACE

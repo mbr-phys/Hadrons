@@ -55,16 +55,17 @@ template <typename GImpl,typename FlowAction>
 class TGaugeFlow: public Module<GaugeFlowPar>
 {
 public:
-    GAUGE_TYPE_ALIASES(GImpl,);
+    INHERIT_GIMPL_TYPES(GImpl);
     class Result : Serializable
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
-                                        std::vector<std::vector<RealD>>, plaquette,
-                                        std::vector<std::vector<RealD>>, rectangle,
-                                        std::vector<std::vector<RealD>>, clover,
-                                        std::vector<std::vector<RealD>>, topcharge,
-                                        std::vector<std::vector<RealD>>, action);
+                                        std::vector<RealD>, flowtime,
+                                        std::vector<RealD>, plaquette,
+                                        std::vector<RealD>, rectangle,
+                                        std::vector<RealD>, clover,
+                                        std::vector<RealD>, topcharge,
+                                        std::vector<RealD>, action);
     };
 public:
     // constructor
@@ -131,11 +132,12 @@ void TGaugeFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu, Result &
     RealD act = SG.S(Umu);
 
     if (par().output.length()) {
-        result.plaquette[step] = std::vector<RealD>({time,plaq});
-        result.rectangle[step] = std::vector<RealD>({time,rect});
-        result.clover[step]    = std::vector<RealD>({time,clov});
-        result.topcharge[step] = std::vector<RealD>({time,Q});
-        result.action[step]    = std::vector<RealD>({time,act});
+        result.flowtime[step]  = time;
+        result.plaquette[step] = plaq;
+        result.rectangle[step] = rect;
+        result.clover[step]    = clov;
+        result.topcharge[step] =    Q;
+        result.action[step]    =  act;
     } else {
         LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
                      << " top. charge: " << std::setprecision(16) << std::scientific << Q
@@ -167,6 +169,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
     }
 
     Result result;
+    result.flowtime.resize(1+par().steps);
     result.plaquette.resize(1+par().steps);
     result.rectangle.resize(1+par().steps);
     result.clover.resize(1+par().steps);

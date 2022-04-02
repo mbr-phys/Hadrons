@@ -188,25 +188,37 @@ class Evolution {
 
         template <typename FImpl>
         FImpl generic_laplace(RealD a, RealD b, GaugeField &Umu, const FImpl& x_in, int skip_axis) {
-            std::vector<GaugeLinkFIeld> U(Nd,Umu.Grid());
+            std::vector<GaugeLinkField> U(Nd,Umu.Grid());
             for (int mu = 0; mu < Nd; mu++) {
                 U[mu] = PeekIndex<LorentzIndex>(Umu,mu);
             }
 
-            FImpl x_out = a*x_in;
+            FImpl tmp = x_in;
+            FImpl x_out = x_in;
+            x_out *= a;
             for (int mu = 0; mu < Nd; mu++) {
                 if (mu != skip_axis) {
-                    x_out = x_out + b * (-2*x_in + U[mu]*Cshift(x_in,mu,1) + Cshift(adj(U[mu])*x_in,mu,-1));
+                    x_out += b * (-2.0*tmp + U[mu]*Cshift(tmp,mu,1) + Cshift(adj(U[mu])*tmp,mu,-1));
                 }
             }
             return x_out;
         };
 
         template <typename FImpl>
-        virtual void evolve_prop(GaugeField &U, FImpl &prop) {
+        void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, FImpl &prop) {
+            // is it -2*epsilon or just epsilon here?
+            FImpl psi1 = prop + (-2.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
+            FImpl psi2 = prop + 8.0*(-2.0*epsilon/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - 2.0*(-2.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
+            FImpl psi3 = psi1 + 3.0*(-2.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
+
+            prop = psi3;
+        };
+
+        template <typename FImpl1, typename FImpl2>
+        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
             GaugeField Z(U.Grid());
             GaugeField tmp(U.Grid());
-            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid()),W3(U.Grid());
+            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid());//W3(U.Grid());
             W0 = U;
             SG.deriv(U, Z);                                
             Z *= 0.25;                                  // Z0 = 1/4 * F(U)
@@ -223,17 +235,12 @@ class Evolution {
             SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) + Z2
             Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2
-            W3 = U;
+            //W3 = U;
 
             // gauge boundary conditions in here?
 
-            FImpl psi1, psi2, psi3;
-            // is it -2*epsilon or just epsilon here?
-            psi1 = prop + (-2.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
-            psi2 = prop + 8.0*(-2.0*epsilon/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - 2.0*(-2.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
-            psi3 = psi1 + 3.0*(-2.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
-
-            prop = psi3;
+            laplace_flow<FImpl1>(W0,W1,W2,q1);
+            laplace_flow<FImpl2>(W0,W1,W2,q2);
         };
 
 // is this something to add, and if so, does prop evolution change?
