@@ -83,6 +83,7 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
+                                        std::string, module_name,
                                         Gamma::Algebra, gamma_snk,
                                         Gamma::Algebra, gamma_src,
                                         std::vector<Complex>, corr);
@@ -207,6 +208,7 @@ void TMeson<FImpl1, FImpl2>::execute(void)
     result.resize(gammaList.size());
     for (unsigned int i = 0; i < result.size(); ++i)
     {
+        result[i].module_name = getName();
         result[i].gamma_snk = gammaList[i].first;
         result[i].gamma_src = gammaList[i].second;
         result[i].corr.resize(nt);

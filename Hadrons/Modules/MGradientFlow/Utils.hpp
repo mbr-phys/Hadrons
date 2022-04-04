@@ -129,25 +129,37 @@ class Evolution {
         Evolution(RealD beta, RealD step, RealD mTau, RealD ts) : 
             SG(FlowAction(beta)), epsilon(step), maxTau(mTau), taus(ts) {};
 
-        virtual void evolve_gauge(GaugeField &U) {
+        std::vector<GaugeField> gauge_RK(GaugeField U) {
+
+            std::vector<GaugeField> Wi;
+
             GaugeField Z(U.Grid());
             GaugeField tmp(U.Grid());
+            Wi.push_back(U);                            // W0
             SG.deriv(U, Z);                                
             Z *= 0.25;                                  // Z0 = 1/4 * F(U)
             GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
+            Wi.push_back(U);                            // W1
 
             Z *= -17.0/8.0;
             SG.deriv(U, tmp); Z += tmp;                 // -17/32*Z0 + Z1
             Z *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
             GImpl::update_field(Z, U, -2.0*epsilon);    // U_= W2 = exp(ep*Z)*W1
+            Wi.push_back(U);                            // W2
 
             Z *= -4.0/3.0;
             SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) + Z2
             Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2
+            Wi.push_back(U);                            // W3
+
+            return Wi;
         };
 
-        virtual void evolve_gauge_adaptive(GaugeField &U) {
+        std::vector<GaugeField> gauge_RK_adaptive(GaugeField U) {
+
+            std::vector<GaugeField> Wi;
+
             if (maxTau - taus < epsilon){
                 epsilon = maxTau-taus;
             }
@@ -155,23 +167,33 @@ class Evolution {
             GaugeField Zprime(U.Grid());
             GaugeField tmp(U.Grid()), Uprime(U.Grid());
             Uprime = U;
+            Wi.push_back(U);                            // W0
             SG.deriv(U, Z);
             Zprime = -Z;
             Z *= 0.25;                                  // Z0 = 1/4 * F(U)
             GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
+            Wi.push_back(U);                            // W1
 
             Z *= -17.0/8.0;
             SG.deriv(U, tmp); Z += tmp;                 // -17/32*Z0 +Z1
             Zprime += 2.0*tmp;
             Z *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
             GImpl::update_field(Z, U, -2.0*epsilon);    // U_= W2 = exp(ep*Z)*W1
+            Wi.push_back(U);                            // W2
 
             Z *= -4.0/3.0;
             SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) +Z2
             Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2      
+            Wi.push_back(U);                            // W3
             
             GImpl::update_field(Zprime, Uprime, -2.0*epsilon); // V'(t+e) = exp(ep*Z')*W0
+            Wi.push_back(Uprime);                       // Uprime
+
+            return Wi;
+        };
+
+        virtual void adaptive_eps(const GaugeField& U, const GaugeField& Uprime) {
             // Compute distance as norm^2 of the difference
             GaugeField diffU = U - Uprime;
             RealD diff = norm2(diffU);   
@@ -179,6 +201,17 @@ class Evolution {
 
             taus += epsilon;
             epsilon = epsilon*0.95*std::pow(1e-4/diff,1./3.);
+        };
+
+        virtual void evolve_gauge(GaugeField &U) {
+            std::vector<GaugeField> Wi = gauge_RK(U);
+            U = Wi[3];
+        };
+
+        virtual void evolve_gauge_adaptive(GaugeField &U) {
+            std::vector<GaugeField> Wi = gauge_RK_adaptive(U);
+            adaptive_eps(Wi[3],Wi[4]);
+            U = Wi[3];
         };
 
         template <typename FImpl>
@@ -211,74 +244,28 @@ class Evolution {
 
         template <typename FImpl1, typename FImpl2>
         void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
-            GaugeField Z(U.Grid());
-            GaugeField tmp(U.Grid());
-            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid());
-            W0 = U;
-            SG.deriv(U, Z);                                
-            Z *= 0.25;                                  // Z0 = 1/4 * F(U)
-            GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
-            W1 = U;
 
-            Z *= -17.0/8.0;
-            SG.deriv(U, tmp); Z += tmp;                 // -17/32*Z0 + Z1
-            Z *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
-            GImpl::update_field(Z, U, -2.0*epsilon);    // U = W2 = exp(ep*Z)*W1
-            W2 = U;
-
-            Z *= -4.0/3.0;
-            SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) + Z2
-            Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
-            GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2
+            std::vector<GaugeField> Wi = gauge_RK(U);
+            U = Wi[3];
 
             // gauge boundary conditions needed here?
 
-            laplace_flow<FImpl1>(W0,W1,W2,q1);
-            laplace_flow<FImpl2>(W0,W1,W2,q2);
+            laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
+            laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
         };
 
         template <typename FImpl1, typename FImpl2>
-        virtual void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
-            if (maxTau - taus < epsilon){
-                epsilon = maxTau-taus;
-            }
-            GaugeField Z(U.Grid());
-            GaugeField Zprime(U.Grid());
-            GaugeField tmp(U.Grid()), Uprime(U.Grid());
-            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid());
-            W0 = U;
-            Uprime = U;
-            SG.deriv(U, Z);
-            Zprime = -Z;
-            Z *= 0.25;                                  // Z0 = 1/4 * F(U)
-            GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
-            W1 = U;
+        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
 
-            Z *= -17.0/8.0;
-            SG.deriv(U, tmp); Z += tmp;                 // -17/32*Z0 +Z1
-            Zprime += 2.0*tmp;
-            Z *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
-            GImpl::update_field(Z, U, -2.0*epsilon);    // U_= W2 = exp(ep*Z)*W1
-            W2 = U;
-
-            Z *= -4.0/3.0;
-            SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) +Z2
-            Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
-            GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2      
+            std::vector<GaugeField> Wi = gauge_RK_adaptive(U);
+            U = Wi[3];
 
             // gauge boundary conditions needed here?
             
-            laplace_flow<FImpl1>(W0,W1,W2,q1);
-            laplace_flow<FImpl2>(W0,W1,W2,q2);
+            laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
+            laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
 
-            GImpl::update_field(Zprime, Uprime, -2.0*epsilon); // V'(t+e) = exp(ep*Z')*W0
-            // Compute distance as norm^2 of the difference
-            GaugeField diffU = U - Uprime;
-            RealD diff = norm2(diffU);   
-            // adjust integration step  
-
-            taus += epsilon;
-            epsilon = epsilon*0.95*std::pow(1e-4/diff,1./3.);
+            adaptive_eps(Wi[3],Wi[4]);
         };
 };
 

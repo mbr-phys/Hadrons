@@ -213,15 +213,23 @@ void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::execute(void)
     status(time,U,Uresult,0);
     Evolution<GImpl,FlowAction> evolve(3.0, par().step_size, mTau, par().step_size);
     if (mTau > 0) {
-        // placeholder while we see if adaptive algorithm needs changes
         unsigned int step = 0;
         do {
             step++;
-        //    evolve.evolve_prop_adaptive(Uwf,prop);
+            evolve.template evolve_prop_adaptive<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf);
+            status(evolve.taus,Uwf,Uresult,step);
             if (step % par().meas_interval == 0) {
-                status(evolve.taus,Uwf,Uresult,step);
+                // need adaptive way to create right number of output PropagatorFields:
+                // current algorithm should output less than standard method so we shouldn't lose
+                // any steps, but will output unneccessary empty propagators to be contracted right now
+                std::stringstream st;
+                st << step;
+                auto &q1i = envGet(PropagatorField1, getName()+"_q1_"+st.str());
+                auto &q2i = envGet(PropagatorField2, getName()+"_q2_"+st.str());
+                q1i = q1wf;
+                q2i = q2wf;
             }
-        } while (step < 2); //(evolve.taus < mTau);
+        } while (evolve.taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
             evolve.template evolve_prop<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf);
