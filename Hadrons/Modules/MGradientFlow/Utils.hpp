@@ -151,7 +151,6 @@ class Evolution {
             if (maxTau - taus < epsilon){
                 epsilon = maxTau-taus;
             }
-            //std::cout << GridLogMessage << "Integration epsilon : " << epsilon << std::endl;
             GaugeField Z(U.Grid());
             GaugeField Zprime(U.Grid());
             GaugeField tmp(U.Grid()), Uprime(U.Grid());
@@ -172,7 +171,6 @@ class Evolution {
             Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2      
             
-            // Ramos
             GImpl::update_field(Zprime, Uprime, -2.0*epsilon); // V'(t+e) = exp(ep*Z')*W0
             // Compute distance as norm^2 of the difference
             GaugeField diffU = U - Uprime;
@@ -180,10 +178,7 @@ class Evolution {
             // adjust integration step  
 
             taus += epsilon;
-            //std::cout << GridLogMessage << "Adjusting integration step with distance: " << diff << std::endl;
-
             epsilon = epsilon*0.95*std::pow(1e-4/diff,1./3.);
-            //std::cout << GridLogMessage << "New epsilon : " << epsilon << std::endl;
         };
 
         template <typename FImpl>
@@ -206,8 +201,6 @@ class Evolution {
 
         template <typename FImpl>
         void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, FImpl &prop) {
-            // is it -2*epsilon or just epsilon here?
-            //RealD eps = -2.0*epsilon; 
             RealD eps = epsilon; 
             FImpl psi1 = prop + (eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
             FImpl psi2 = prop + (8.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - (2.0*eps/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
@@ -220,7 +213,7 @@ class Evolution {
         void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
             GaugeField Z(U.Grid());
             GaugeField tmp(U.Grid());
-            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid());//W3(U.Grid());
+            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid());
             W0 = U;
             SG.deriv(U, Z);                                
             Z *= 0.25;                                  // Z0 = 1/4 * F(U)
@@ -237,17 +230,56 @@ class Evolution {
             SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) + Z2
             Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2
-            //W3 = U;
 
-            // gauge boundary conditions in here?
+            // gauge boundary conditions needed here?
 
             laplace_flow<FImpl1>(W0,W1,W2,q1);
             laplace_flow<FImpl2>(W0,W1,W2,q2);
         };
 
-// is this something to add, and if so, does prop evolution change?
-//        virtual void evolve_prop_adaptive(GaugeField &U) {
-//        };
+        template <typename FImpl1, typename FImpl2>
+        virtual void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
+            if (maxTau - taus < epsilon){
+                epsilon = maxTau-taus;
+            }
+            GaugeField Z(U.Grid());
+            GaugeField Zprime(U.Grid());
+            GaugeField tmp(U.Grid()), Uprime(U.Grid());
+            GaugeField W0(U.Grid()),W1(U.Grid()),W2(U.Grid());
+            W0 = U;
+            Uprime = U;
+            SG.deriv(U, Z);
+            Zprime = -Z;
+            Z *= 0.25;                                  // Z0 = 1/4 * F(U)
+            GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
+            W1 = U;
+
+            Z *= -17.0/8.0;
+            SG.deriv(U, tmp); Z += tmp;                 // -17/32*Z0 +Z1
+            Zprime += 2.0*tmp;
+            Z *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
+            GImpl::update_field(Z, U, -2.0*epsilon);    // U_= W2 = exp(ep*Z)*W1
+            W2 = U;
+
+            Z *= -4.0/3.0;
+            SG.deriv(U, tmp); Z += tmp;                 // 4/3*(17/36*Z0 -8/9*Z1) +Z2
+            Z *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
+            GImpl::update_field(Z, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2      
+
+            // gauge boundary conditions needed here?
+            
+            laplace_flow<FImpl1>(W0,W1,W2,q1);
+            laplace_flow<FImpl2>(W0,W1,W2,q2);
+
+            GImpl::update_field(Zprime, Uprime, -2.0*epsilon); // V'(t+e) = exp(ep*Z')*W0
+            // Compute distance as norm^2 of the difference
+            GaugeField diffU = U - Uprime;
+            RealD diff = norm2(diffU);   
+            // adjust integration step  
+
+            taus += epsilon;
+            epsilon = epsilon*0.95*std::pow(1e-4/diff,1./3.);
+        };
 };
 
 END_MODULE_NAMESPACE
