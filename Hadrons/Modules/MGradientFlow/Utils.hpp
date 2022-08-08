@@ -236,14 +236,14 @@ class Evolution {
         void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, FImpl &prop) {
             RealD eps = epsilon; 
             FImpl psi1 = prop + (eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
-            FImpl psi2 = prop + (8.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - (2.0*eps/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
+            FImpl psi2 = prop + (8.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - (2.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
             FImpl psi3 = psi1 + (3.0*eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
 
             prop = psi3;
         };
 
-        template <typename FImpl1, typename FImpl2>
-        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
+        template <typename FImpl1, typename FImpl2, typename FImpl3>
+        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2, FImpl3 &q3) {
 
             std::vector<GaugeField> Wi = gauge_RK(U);
             U = Wi[3];
@@ -252,10 +252,11 @@ class Evolution {
 
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
+            laplace_flow<FImpl3>(Wi[0],Wi[1],Wi[2],q3);
         };
 
-        template <typename FImpl1, typename FImpl2>
-        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
+        template <typename FImpl1, typename FImpl2, typename FImpl3>
+        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2, FImpl3 &q3) {
 
             std::vector<GaugeField> Wi = gauge_RK_adaptive(U);
             U = Wi[3];
@@ -264,6 +265,7 @@ class Evolution {
             
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
+            laplace_flow<FImpl3>(Wi[0],Wi[1],Wi[2],q3);
 
             adaptive_eps(Wi[3],Wi[4]);
         };

@@ -1,10 +1,10 @@
 /*
- * FermionFlow.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * Translat.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2022
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Matthew Black    <matthewkblack@protonmail.com>
+ * Author: Matthew Black <matthewkblack@protonmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,10 +24,10 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MGradientFlow/FermionFlow.hpp>
+#include <Hadrons/Modules/MGauge/Translat.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MGradientFlow;
+using namespace MGauge;
 
-template class Grid::Hadrons::MGradientFlow::TFermionFlow<FIMPL,FIMPL,FIMPL,GIMPL,WilsonGaugeAction<GIMPL>>;
+template class Grid::Hadrons::MGauge::TTranslat<GIMPL>;
