@@ -214,6 +214,15 @@ class Evolution {
             U = Wi[3];
         };
 
+        //virtual void gauge_apply_boundary(GaugeField &Umu, std::vector<int> bc, std::vector<int> dims) {
+        //    std::vector<GaugeLinkField> U(Nd,Umu.Grid()), tmp(Nd,Umu.Grid()); 
+        //    for (int mu = 0; mu < Nd; mu++) {
+        //        U[mu] = PeekIndex<LorentzIndex>(Umu,mu);}
+        //    for (int nu = 0; nu < Nd; nu++) {
+        //        int ns = dims[nu];
+        //        tmp[nu] = bc[nu]*
+        //};
+
         template <typename FImpl>
         FImpl generic_laplace(RealD a, RealD b, GaugeField &Umu, const FImpl& x_in, int skip_axis) {
             std::vector<GaugeLinkField> U(Nd,Umu.Grid());
@@ -221,12 +230,13 @@ class Evolution {
                 U[mu] = PeekIndex<LorentzIndex>(Umu,mu);
             }
 
-            FImpl tmp = x_in;
-            FImpl x_out = x_in;
-            x_out *= a;
+            RealD Nx = Nd;
+            if (skip_axis != -1) Nx--;
+
+            FImpl x_out = (a + -2.0*Nx*b) * x_in;
             for (int mu = 0; mu < Nd; mu++) {
                 if (mu != skip_axis) {
-                    x_out += b * (-2.0*tmp + U[mu]*Cshift(tmp,mu,1) + Cshift(adj(U[mu])*tmp,mu,-1));
+                    x_out += b*(U[mu]*Cshift(x_in,mu,1) + Cshift(adj(U[mu])*x_in,mu,-1));
                 }
             }
             return x_out;
@@ -248,7 +258,7 @@ class Evolution {
             std::vector<GaugeField> Wi = gauge_RK(U);
             U = Wi[3];
 
-            // gauge boundary conditions needed here?
+            // gauge boundary conditions needed here
 
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);

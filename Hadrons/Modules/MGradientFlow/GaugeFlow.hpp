@@ -30,6 +30,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/Serialization.hpp>
 #include <Hadrons/Modules/MGradientFlow/Utils.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -80,7 +81,7 @@ public:
     // action
     FlowAction SG = FlowAction(3.0);
     // gauge observable measurements at flow time
-    void status(double time, GaugeField &Umu, Result &result, int step);
+    void status(double time, GaugeField &Umu, auto &result, int step);
     // execution
     virtual void execute(void);
 };
@@ -120,10 +121,11 @@ template <typename GImpl,typename FlowAction>
 void TGaugeFlow<GImpl,FlowAction>::setup(void)
 {
     envCreateLat(GaugeField, getName());
+    envCreate(HadronsGenericSerializable, getName(), 1, 0);
 }
 
 template <typename GImpl,typename FlowAction>
-void TGaugeFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu, Result &result, int step)
+void TGaugeFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu, auto &result, int step)
 {
     RealD Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
     RealD plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
@@ -131,21 +133,21 @@ void TGaugeFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu, Result &
     RealD clov = avgClover<GImpl,ComplexField,GaugeField,GaugeLinkField>(Umu);
     RealD act = SG.S(Umu);
 
-    if (par().output.length()) {
-        result.flowtime[step]  = time;
-        result.plaquette[step] = plaq;
-        result.rectangle[step] = rect;
-        result.clover[step]    = clov;
-        result.topcharge[step] =    Q;
-        result.action[step]    =  act;
-    } else {
-        LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
-                     << " top. charge: " << std::setprecision(16) << std::scientific << Q
-                     << " plaquette: " << plaq
-                     << " rectangle: " << rect
-                     << " clover: " << clov
-                     << " action: " << act << std::endl;
-    }
+//    if (par().output.length()) {
+    result.flowtime[step-1]  = time;
+    result.plaquette[step-1] = plaq;
+    result.rectangle[step-1] = rect;
+    result.clover[step-1]    = clov;
+    result.topcharge[step-1] =    Q;
+    result.action[step-1]    =  act;
+//    } else {
+//        LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
+//                     << " top. charge: " << std::setprecision(16) << std::scientific << Q
+//                     << " plaquette: " << plaq
+//                     << " rectangle: " << rect
+//                     << " clover: " << clov
+//                     << " action: " << act << std::endl;
+//    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -168,41 +170,41 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
         mTau = (RealD)std::stoi(par().maxTau);
     }
 
-    Result result;
-    result.flowtime.resize(1+par().steps);
-    result.plaquette.resize(1+par().steps);
-    result.rectangle.resize(1+par().steps);
-    result.clover.resize(1+par().steps);
-    result.topcharge.resize(1+par().steps);
-    result.action.resize(1+par().steps);
+    auto &out    = envGet(HadronsGenericSerializable, getName());
+    auto &result = out.template hold<Result>();
+
+    result.flowtime.resize(par().steps);
+    result.plaquette.resize(par().steps);
+    result.rectangle.resize(par().steps);
+    result.clover.resize(par().steps);
+    result.topcharge.resize(par().steps);
+    result.action.resize(par().steps);
 
     auto &U   = envGet(GaugeField, par().gauge);
     auto &Uwf = envGet(GaugeField, getName());
 
     Uwf = U;
     double time = 0;
-    status(time,U,result,0);
+//    status(time,U,result,0); 
     Evolution<GImpl,FlowAction> evolve(3.0, par().step_size, mTau, par().step_size);
     if (mTau > 0) {
         unsigned int step = 0;
         do {
             step++;
-            evolve.evolve_gauge_adaptive(Uwf);
             if (step % par().meas_interval == 0) {
                 status(evolve.taus,Uwf,result,step);
             }
+            evolve.evolve_gauge_adaptive(Uwf);
         } while (evolve.taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
-            evolve.evolve_gauge(Uwf);
             if (step % par().meas_interval == 0) {
                 status(step*par().step_size,Uwf,result,step);
             }
+            evolve.evolve_gauge(Uwf);
         }
     }
-    if (par().output.length()) {
-        saveResult(par().output,"flow",result);
-    }
+    saveResult(par().output,"gauge_obs",result);
 }
 
 END_MODULE_NAMESPACE
