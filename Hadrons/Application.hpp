@@ -53,15 +53,23 @@ public:
     struct DatabasePar: Serializable
     {
         GRID_SERIALIZABLE_CLASS_MEMBERS(DatabasePar,
-                                        std::string, applicationDb,
-                                        std::string, resultDb,
-                                        bool,        restoreModules,
-                                        bool,        restoreMemoryProfile,
-                                        bool,        restoreSchedule,
-                                        std::string, statDbBase);
+                                        std::string,  applicationDb,
+                                        std::string,  resultDb,
+                                        bool,         restoreModules,
+                                        bool,         restoreMemoryProfile,
+                                        bool,         restoreSchedule,
+                                        std::string,  statDbBase,
+                                        unsigned int, statDbPeriodMs);
         DatabasePar(void): 
         restoreModules{false}, restoreMemoryProfile{false},
         restoreSchedule{false}, statDbBase{""} {}
+    };
+
+    struct SchedulerPar: Serializable
+    {
+        GRID_SERIALIZABLE_CLASS_MEMBERS(SchedulerPar,
+                                        std::string, schedulerType,);
+        SchedulerPar(void): schedulerType{"genetic"} {}
     };
 
     struct GlobalPar: Serializable
@@ -70,6 +78,7 @@ public:
                                         TrajRange,                  trajCounter,
                                         DatabasePar,                database,
                                         VirtualMachine::GeneticPar, genetic,
+                                        SchedulerPar,               scheduler,
                                         std::string,                runId,
                                         std::string,                graphFile,
                                         std::string,                scheduleFile,
@@ -113,6 +122,7 @@ public:
     void saveParameterFile(const std::string parameterFileName, unsigned int prec = 15);
     // schedule computation
     void schedule(void);
+    void naiveSchedule(void);
     void saveSchedule(const std::string filename);
     void loadSchedule(const std::string filename);
     void printSchedule(void);
