@@ -40,21 +40,21 @@ class ZeuthenGaugeAction {
 public:
     INHERIT_GIMPL_TYPES(GImpl);
     
-    RealD beta;
+    double beta;
     SymanzikGaugeAction<GImpl> SG;
 
-    ZeuthenGaugeAction(RealD b): beta(b),SG(SymanzikGaugeAction<GImpl>(b)) {};
+    ZeuthenGaugeAction(double b): beta(b),SG(SymanzikGaugeAction<GImpl>(b)) {};
 
     virtual std::string action_name(){return "ZeuthenGaugeAction";}
 
-    virtual RealD S(const GaugeField &U) {
+    virtual double S(const GaugeField &U) {
         return SG.S(U);
     };
 
     virtual void deriv(const GaugeField &Umu, GaugeField &dSdU) {
-                                              //  beta = 3.0, cl = -1.0/12.0 -> Symanzik
-        RealD factor_p = 5.0/RealD(Nc)*0.5;   //   5.0 = beta*(1.0-8.0*cl)
-        RealD factor_r = -0.25/RealD(Nc)*0.5; // -0.25 = beta*cl
+                                                //  beta = 3.0, cl = -1.0/12.0 -> Symanzik
+        double factor_p = 5.0/double(Nc)*0.5;   //   5.0 = beta*(1.0-8.0*cl)
+        double factor_r = -0.25/double(Nc)*0.5; // -0.25 = beta*cl
 
         GridBase *grid = Umu.Grid();
 
@@ -105,7 +105,7 @@ void siteClover(ComplexField &Clov, const GaugeLorentz &U)
 }
 
 template <typename GImpl, typename ComplexField, typename GaugeLorentz, typename GaugeMat>
-RealD avgClover(const GaugeLorentz &Umu) 
+double avgClover(const GaugeLorentz &Umu) 
 {
     ComplexField Clov(Umu.Grid());
 
@@ -118,15 +118,15 @@ RealD avgClover(const GaugeLorentz &Umu)
     return c.real() / vol;
 }
 
-// field evolution /////////////////////////////////////////////////////////
+// field evolution /////////////////////////////////////////////////////////////
 template <typename GImpl, typename FlowAction>
 class Evolution {
     public:
         INHERIT_GIMPL_TYPES(GImpl);
 
-        RealD epsilon, maxTau, taus;
+        double epsilon, maxTau, taus;
         FlowAction SG;
-        Evolution(RealD beta, RealD step, RealD mTau, RealD ts) : 
+        Evolution(double beta, double step, double mTau, double ts) : 
             SG(FlowAction(beta)), epsilon(step), maxTau(mTau), taus(ts) {};
 
         std::vector<GaugeField> gauge_RK(GaugeField U) {
@@ -137,6 +137,8 @@ class Evolution {
             GaugeField tmp(U.Grid());
             Wi.push_back(U);                            // W0
             SG.deriv(U, Z);                                
+            double plaq = WilsonLoops<GImpl>::avgPlaquette(Z);
+            std::cout << "checking plaquette of Z: " << std::setprecision(16) << plaq << std::endl;
             Z *= 0.25;                                  // Z0 = 1/4 * F(U)
             GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
             Wi.push_back(U);                            // W1
@@ -196,7 +198,7 @@ class Evolution {
         virtual void adaptive_eps(const GaugeField& U, const GaugeField& Uprime) {
             // Compute distance as norm^2 of the difference
             GaugeField diffU = U - Uprime;
-            RealD diff = norm2(diffU);   
+            double diff = norm2(diffU);   
             // adjust integration step  
 
             taus += epsilon;
@@ -224,19 +226,15 @@ class Evolution {
         //};
 
         template <typename FImpl>
-        FImpl generic_laplace(RealD a, RealD b, GaugeField &Umu, const FImpl& x_in, int skip_axis) {
-            std::vector<GaugeLinkField> U(Nd,Umu.Grid());
-            for (int mu = 0; mu < Nd; mu++) {
-                U[mu] = PeekIndex<LorentzIndex>(Umu,mu);
-            }
-
-            RealD Nx = Nd;
+        FImpl generic_laplace(double a, double b, GaugeField &Umu, const FImpl& x_in, int skip_axis) {
+            double Nx = Nd;
             if (skip_axis != -1) Nx--;
 
             FImpl x_out = (a + -2.0*Nx*b) * x_in;
             for (int mu = 0; mu < Nd; mu++) {
                 if (mu != skip_axis) {
-                    x_out += b*(U[mu]*Cshift(x_in,mu,1) + Cshift(adj(U[mu])*x_in,mu,-1));
+                    GaugeLinkField U = PeekIndex<LorentzIndex>(Umu, mu);
+                    x_out += b*(GImpl::CovShiftForward(U,mu,x_in) + GImpl::CovShiftBackward(U,mu,x_in));
                 }
             }
             return x_out;
@@ -244,16 +242,15 @@ class Evolution {
 
         template <typename FImpl>
         void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, FImpl &prop) {
-            RealD eps = epsilon; 
-            FImpl psi1 = prop + (eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
-            FImpl psi2 = prop + (8.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - (2.0*eps/9.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
-            FImpl psi3 = psi1 + (3.0*eps/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
+            FImpl psi1 = prop + (epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
+            FImpl psi2 = prop + (8.0*epsilon/9.0)*generic_laplace<FImpl>(0.0, 1.0, W1, psi1, -1) - (2.0*epsilon/9.0)*generic_laplace<FImpl>(0.0, 1.0, W0, prop, -1);
+            FImpl psi3 = psi1 + (3.0*epsilon/4.0)*generic_laplace<FImpl>(0.0, 1.0, W2, psi2, -1);
 
             prop = psi3;
         };
 
-        template <typename FImpl1, typename FImpl2, typename FImpl3>
-        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2, FImpl3 &q3) {
+        template <typename FImpl1, typename FImpl2>
+        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
 
             std::vector<GaugeField> Wi = gauge_RK(U);
             U = Wi[3];
@@ -262,22 +259,36 @@ class Evolution {
 
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
-            laplace_flow<FImpl3>(Wi[0],Wi[1],Wi[2],q3);
         };
 
-        template <typename FImpl1, typename FImpl2, typename FImpl3>
-        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2, FImpl3 &q3) {
+        template <typename FImpl1, typename FImpl2>
+        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
 
             std::vector<GaugeField> Wi = gauge_RK_adaptive(U);
             U = Wi[3];
 
-            // gauge boundary conditions needed here?
+            // gauge boundary conditions needed here
             
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
-            laplace_flow<FImpl3>(Wi[0],Wi[1],Wi[2],q3);
 
             adaptive_eps(Wi[3],Wi[4]);
+        };
+
+        // gauge field status //////////////////////////////////////////////////////////
+        void gauge_status(GaugeField &Umu, auto &result, int index)
+        {
+            double Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
+            double plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
+            double rect = WilsonLoops<GImpl>::avgRectangle(Umu);
+            double clov = avgClover<GImpl,ComplexField,GaugeField,GaugeLinkField>(Umu);
+            double act = SG.S(Umu);
+
+            result.plaquette[index] = plaq;
+            result.rectangle[index] = rect;
+            result.clover[index]    = clov;
+            result.topcharge[index] =    Q;
+            result.action[index]    =  act;
         };
 };
 

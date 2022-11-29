@@ -47,32 +47,29 @@ public:
                                     std::string, output,
                                     std::string, q1,
                                     std::string, q2,
-                                    std::string, q3,
                                     std::string, gauge,
                                     int, steps,
                                     double, step_size,
                                     int, meas_interval,
-                                    std::string, maxTau); 
+                                    std::string, maxTau);
 };
 
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
+template <typename FImpl1,typename FImpl2,typename GImpl,typename FlowAction>
 class TFermionFlow: public Module<FermionFlowPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl1, 1);
     FERM_TYPE_ALIASES(FImpl2, 2);
-    FERM_TYPE_ALIASES(FImpl2, 3);
     INHERIT_GIMPL_TYPES(GImpl);
     class GaugeResult : Serializable
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(GaugeResult,
-                                        std::vector<RealD>, flowtime,
-                                        std::vector<RealD>, plaquette,
-                                        std::vector<RealD>, rectangle,
-                                        std::vector<RealD>, clover,
-                                        std::vector<RealD>, topcharge,
-                                        std::vector<RealD>, action);
+                                        std::vector<double>, plaquette,
+                                        std::vector<double>, rectangle,
+                                        std::vector<double>, clover,
+                                        std::vector<double>, topcharge,
+                                        std::vector<double>, action);
     };
 public:
     // constructor
@@ -87,35 +84,34 @@ public:
     // action
     FlowAction SG = FlowAction(3.0);
     // gauge measurements at each flow time
-    void status(double time, GaugeField &Umu, auto &result, int step);
+    // void status(double time, GaugeField &Umu, auto &result, int step);
     // execution
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(WilsonFermionFlow,ARG(TFermionFlow<FIMPL,FIMPL,FIMPL,GIMPL,WilsonGaugeAction<GIMPL>>),MGradientFlow);
+MODULE_REGISTER_TMP(WilsonFermionFlow,ARG(TFermionFlow<FIMPL,FIMPL,GIMPL,WilsonGaugeAction<GIMPL>>),MGradientFlow);
 
 /******************************************************************************
  *                     TFermionFlow implementation                          *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
-TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::TFermionFlow(const std::string name)
+template <typename FImpl1,typename FImpl2,typename GImpl,typename FlowAction>
+TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::TFermionFlow(const std::string name)
 : Module<FermionFlowPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
-std::vector<std::string> TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::getInput(void)
+template <typename FImpl1,typename FImpl2,typename GImpl,typename FlowAction>
+std::vector<std::string> TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::getInput(void)
 {
     std::vector<std::string> in = {par().gauge,par().q1};
     if (!((par().q1.compare(par().q2) == 0) || par().q2.empty())) in.push_back(par().q2);
-    if (!((par().q1.compare(par().q3) == 0) || (par().q2.compare(par().q3) == 0) || par().q3.empty())) in.push_back(par().q3);
     
     return in;
 }
 
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
-std::vector<std::string> TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::getOutput(void)
+template <typename FImpl1,typename FImpl2,typename GImpl,typename FlowAction>
+std::vector<std::string> TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::getOutput(void)
 {
     std::vector<std::string> out = {getName(),getName()+"_U"};
     for (int i = 1; i <= par().steps; i++) 
@@ -126,26 +122,19 @@ std::vector<std::string> TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::ge
             out.push_back(getName()+"_q1_"+st.str());
             if (!((par().q1.compare(par().q2) == 0) || par().q2.empty())) {
                 out.push_back(getName()+"_q2_"+st.str());}
-            if (!((par().q1.compare(par().q3) == 0) || (par().q2.compare(par().q3) == 0) || par().q3.empty())) {
-                out.push_back(getName()+"_q3_"+st.str());}
         }
     }
-    
-    std::cout << "TESTING: q1 - " << par().q1 << " q2 - " << par().q2 << " q3 - " << par().q3 << " "; 
-    for (int j = 0; j < out.size(); j++) std::cout << out[j] << " ";
-    std::cout << "DONE." << std::endl;
     return out;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
-void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::setup(void)
+template <typename FImpl1,typename FImpl2,typename GImpl,typename FlowAction>
+void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::setup(void)
 {
     envCreateLat(GaugeField, getName()+"_U");
 
     envTmpLat(PropagatorField1, "q1wf");
     envTmpLat(PropagatorField2, "q2wf");
-    envTmpLat(PropagatorField3, "q3wf");
 
     for (int i = 1; i <= par().steps; i++) 
     {
@@ -155,42 +144,14 @@ void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::setup(void)
             envCreateLat(PropagatorField1, getName()+"_q1_"+st.str());
             if (!((par().q1.compare(par().q2) == 0) || par().q2.empty())) {
                 envCreateLat(PropagatorField2, getName()+"_q2_"+st.str());}
-            if (!((par().q1.compare(par().q3) == 0) || (par().q2.compare(par().q3) == 0) || par().q3.empty())) {
-                envCreateLat(PropagatorField3, getName()+"_q3_"+st.str());}
         }
     }
     envCreate(HadronsGenericSerializable, getName(), 1, 0);
 }
 
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
-void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::status(double time, GaugeField &Umu, auto &Uresult, int step)
-{
-    RealD Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
-    RealD plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
-    RealD rect = WilsonLoops<GImpl>::avgRectangle(Umu);
-    RealD clov = avgClover<GImpl,ComplexField,GaugeField,GaugeLinkField>(Umu);
-    RealD act = SG.S(Umu);
-
-//    if (par().output.length()) {
-    Uresult.flowtime[step-1]  = time;
-    Uresult.plaquette[step-1] = plaq;
-    Uresult.rectangle[step-1] = rect;
-    Uresult.clover[step-1]    = clov;
-    Uresult.topcharge[step-1] =    Q;
-    Uresult.action[step-1]    =  act;
- //   } else {
- //       LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time
- //                    << " top. charge: " << std::setprecision(16) << std::scientific << Q                      
- //                    << " plaquette: " << plaq
- //                    << " rectangle: " << rect
- //                    << " clover: " << clov
- //                    << " action: " << act << std::endl;
- //   }
-}
-
 // execution ///////////////////////////////////////////////////////////////////
-template <typename FImpl1,typename FImpl2,typename FImpl3,typename GImpl,typename FlowAction>
-void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::execute(void)
+template <typename FImpl1,typename FImpl2,typename GImpl,typename FlowAction>
+void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::execute(void)
 {
     std::string type = SG.action_name();
     std::string ga = "GaugeAction";
@@ -199,21 +160,19 @@ void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::execute(void)
         type.erase(i, ga.length());
     }
 
-    LOG(Message) << "Setting up " << type << " Fermion Flow on '" << par().gauge << "' Gauge Field and " 
-                 << par().q1 << ", " << par().q2 << " Fermion Propagators with " 
-                 << par().steps << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
+    LOG(Message) << "Setting up " << type << " Fermion Flow on '" << par().gauge << "' Gauge Field and "  << par().q1 
+                 << (!(par().q2.empty()) ? ", "+par().q2+" Fermion Propagators " : " Fermion Propagator ")
+                 << "with " << par().steps << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
 
-    RealD mTau = -1.0;
+    double mTau = -1.0;
     if(!par().maxTau.empty()) {
-        // is this working for fermion flow?
         LOG(Message) << "Using adaptive algorithm with maxTau = " << par().maxTau << std::endl;
-        mTau = (RealD)std::stoi(par().maxTau);
+        mTau = (double)std::stoi(par().maxTau);
     }
 
     auto &out     = envGet(HadronsGenericSerializable, getName());
     auto &Uresult = out.template hold<GaugeResult>();
 
-    Uresult.flowtime.resize(par().steps);
     Uresult.plaquette.resize(par().steps);
     Uresult.rectangle.resize(par().steps);
     Uresult.clover.resize(par().steps);
@@ -234,25 +193,18 @@ void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::execute(void)
     envGetTmp(PropagatorField2, q2wf);
     q2wf = q2;
 
-    std::string q3ref = par().q3;
-    if (((par().q1.compare(par().q3) == 0) || (par().q2.compare(par().q3) == 0) || par().q3.empty())) q3ref = par().q1;
-    auto &q3   = envGet(PropagatorField3, q3ref);
-    envGetTmp(PropagatorField3, q3wf);
-    q3wf = q3;
-
     double time = 0;
-//    status(time,U,Uresult,0);
     Evolution<GImpl,FlowAction> evolve(3.0, par().step_size, mTau, par().step_size);
     if (mTau > 0) {
         unsigned int step = 0;
         do {
             step++;
-            status(evolve.taus,Uwf,Uresult,step);
-            evolve.template evolve_prop_adaptive<PropagatorField1,PropagatorField2,PropagatorField3>(Uwf,q1wf,q2wf,q3wf);
+            evolve.template evolve_prop_adaptive<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf); 
+            evolve.gauge_status(Uwf,Uresult,step-1);
             if (step % par().meas_interval == 0) {
                 // need adaptive way to create right number of output PropagatorFields:
-                // current algorithm should output less than standard method so we shouldn't lose
-                // any steps, but will output unneccessary empty propagators to be contracted right now
+                // current algorithm should output less than old method so we shouldn't lose
+                // any steps, but will output unneccessary empty propagators right now
                 std::stringstream st;
                 st << step;
                 auto &q1i = envGet(PropagatorField1, getName()+"_q1_"+st.str());
@@ -260,29 +212,21 @@ void TFermionFlow<FImpl1,FImpl2,FImpl3,GImpl,FlowAction>::execute(void)
                 if (!((par().q1.compare(par().q2) == 0) || par().q2.empty())) {
                     auto &q2i = envGet(PropagatorField2, getName()+"_q2_"+st.str());
                     q2i = q2wf;
-                }
-                if (!((par().q1.compare(par().q3) == 0) || (par().q2.compare(par().q3) == 0) || par().q3.empty())) {
-                    auto &q3i = envGet(PropagatorField3, getName()+"_q3_"+st.str());
-                    q3i = q3wf;
                 }
             }
         } while (evolve.taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
-            status(step*par().step_size,Uwf,Uresult,step);
-            evolve.template evolve_prop<PropagatorField1,PropagatorField2,PropagatorField3>(Uwf,q1wf,q2wf,q3wf);
+            evolve.template evolve_prop<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf); 
+            evolve.gauge_status(Uwf,Uresult,step-1);
             if ((step % par().meas_interval == 0) || (step == par().steps)) {
                 std::stringstream st;
                 st << step;
                 auto &q1i = envGet(PropagatorField1, getName()+"_q1_"+st.str());
-                q1i = q1wf;
+                q1i = q1wf; 
                 if (!((par().q1.compare(par().q2) == 0) || par().q2.empty())) {
                     auto &q2i = envGet(PropagatorField2, getName()+"_q2_"+st.str());
                     q2i = q2wf;
-                }
-                if (!((par().q1.compare(par().q3) == 0) || (par().q2.compare(par().q3) == 0) || par().q3.empty())) {
-                    auto &q3i = envGet(PropagatorField3, getName()+"_q3_"+st.str());
-                    q3i = q3wf;
                 }
             }
         }

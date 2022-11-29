@@ -61,12 +61,11 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
-                                        std::vector<RealD>, flowtime,
-                                        std::vector<RealD>, plaquette,
-                                        std::vector<RealD>, rectangle,
-                                        std::vector<RealD>, clover,
-                                        std::vector<RealD>, topcharge,
-                                        std::vector<RealD>, action);
+                                        std::vector<double>, plaquette,
+                                        std::vector<double>, rectangle,
+                                        std::vector<double>, clover,
+                                        std::vector<double>, topcharge,
+                                        std::vector<double>, action);
     };
 public:
     // constructor
@@ -81,7 +80,7 @@ public:
     // action
     FlowAction SG = FlowAction(3.0);
     // gauge observable measurements at flow time
-    void status(double time, GaugeField &Umu, auto &result, int step);
+    // void status(double time, GaugeField &Umu, auto &result, int step);
     // execution
     virtual void execute(void);
 };
@@ -111,7 +110,7 @@ std::vector<std::string> TGaugeFlow<GImpl,FlowAction>::getInput(void)
 template <typename GImpl,typename FlowAction>
 std::vector<std::string> TGaugeFlow<GImpl,FlowAction>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName(),getName()+"_U"};
     
     return out;
 }
@@ -120,34 +119,8 @@ std::vector<std::string> TGaugeFlow<GImpl,FlowAction>::getOutput(void)
 template <typename GImpl,typename FlowAction>
 void TGaugeFlow<GImpl,FlowAction>::setup(void)
 {
-    envCreateLat(GaugeField, getName());
+    envCreateLat(GaugeField, getName()+"_U");
     envCreate(HadronsGenericSerializable, getName(), 1, 0);
-}
-
-template <typename GImpl,typename FlowAction>
-void TGaugeFlow<GImpl,FlowAction>::status(double time, GaugeField &Umu, auto &result, int step)
-{
-    RealD Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
-    RealD plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
-    RealD rect = WilsonLoops<GImpl>::avgRectangle(Umu);
-    RealD clov = avgClover<GImpl,ComplexField,GaugeField,GaugeLinkField>(Umu);
-    RealD act = SG.S(Umu);
-
-//    if (par().output.length()) {
-    result.flowtime[step-1]  = time;
-    result.plaquette[step-1] = plaq;
-    result.rectangle[step-1] = rect;
-    result.clover[step-1]    = clov;
-    result.topcharge[step-1] =    Q;
-    result.action[step-1]    =  act;
-//    } else {
-//        LOG(Message) << "flow time = " << std::setprecision(3) << std::fixed << time 
-//                     << " top. charge: " << std::setprecision(16) << std::scientific << Q
-//                     << " plaquette: " << plaq
-//                     << " rectangle: " << rect
-//                     << " clover: " << clov
-//                     << " action: " << act << std::endl;
-//    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -162,46 +135,53 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
     }
 
     LOG(Message) << "Setting up " << type << " Flow on '" << par().gauge << "' with " << par().steps
-                 << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
+                 << " step" << ((par().steps != 1) ? "s." : ".") << std::endl;
 
-    RealD mTau = -1.0;
+    double mTau = -1.0;
     if(!par().maxTau.empty()) {
         LOG(Message) << "Using adaptive algorithm with maxTau = " << par().maxTau << std::endl;
-        mTau = (RealD)std::stoi(par().maxTau);
+        mTau = (double)std::stoi(par().maxTau);
     }
 
     auto &out    = envGet(HadronsGenericSerializable, getName());
     auto &result = out.template hold<Result>();
 
-    result.flowtime.resize(par().steps);
-    result.plaquette.resize(par().steps);
-    result.rectangle.resize(par().steps);
-    result.clover.resize(par().steps);
-    result.topcharge.resize(par().steps);
-    result.action.resize(par().steps);
-
     auto &U   = envGet(GaugeField, par().gauge);
-    auto &Uwf = envGet(GaugeField, getName());
+    auto &Uwf = envGet(GaugeField, getName()+"_U");
 
     Uwf = U;
     double time = 0;
-//    status(time,U,result,0); 
+
     Evolution<GImpl,FlowAction> evolve(3.0, par().step_size, mTau, par().step_size);
-    if (mTau > 0) {
-        unsigned int step = 0;
-        do {
-            step++;
-            if (step % par().meas_interval == 0) {
-                status(evolve.taus,Uwf,result,step);
-            }
-            evolve.evolve_gauge_adaptive(Uwf);
-        } while (evolve.taus < mTau);
+    if (par().steps == 0) { // if steps = 0, give the status of gauge field without flowing
+        result.plaquette.resize(1);
+        result.rectangle.resize(1);
+        result.clover.resize(1);
+        result.topcharge.resize(1);
+        result.action.resize(1);
+        evolve.gauge_status(Uwf,result,0); 
     } else {
-        for (unsigned int step = 1; step <= par().steps; step++) {
-            if (step % par().meas_interval == 0) {
-                status(step*par().step_size,Uwf,result,step);
+        result.plaquette.resize(par().steps);
+        result.rectangle.resize(par().steps);
+        result.clover.resize(par().steps);
+        result.topcharge.resize(par().steps);
+        result.action.resize(par().steps);
+        if (mTau > 0) {
+            unsigned int step = 0;
+            do {
+                step++;
+                evolve.evolve_gauge_adaptive(Uwf);
+                if (step % par().meas_interval == 0) {
+                    evolve.gauge_status(Uwf,result,step-1);
+                }
+            } while (evolve.taus < mTau);
+        } else {
+            for (unsigned int step = 1; step <= par().steps; step++) {
+                evolve.evolve_gauge(Uwf);
+                if (step % par().meas_interval == 0) {
+                    evolve.gauge_status(Uwf,result,step-1);
+                }
             }
-            evolve.evolve_gauge(Uwf);
         }
     }
     saveResult(par().output,"gauge_obs",result);
