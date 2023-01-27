@@ -137,8 +137,6 @@ class Evolution {
             GaugeField tmp(U.Grid());
             Wi.push_back(U);                            // W0
             SG.deriv(U, Z);                                
-            double plaq = WilsonLoops<GImpl>::avgPlaquette(Z);
-            std::cout << "checking plaquette of Z: " << std::setprecision(16) << plaq << std::endl;
             Z *= 0.25;                                  // Z0 = 1/4 * F(U)
             GImpl::update_field(Z, U, -2.0*epsilon);    // U = W1 = exp(ep*Z0)*W0
             Wi.push_back(U);                            // W1
@@ -216,14 +214,22 @@ class Evolution {
             U = Wi[3];
         };
 
-        //virtual void gauge_apply_boundary(GaugeField &Umu, std::vector<int> bc, std::vector<int> dims) {
-        //    std::vector<GaugeLinkField> U(Nd,Umu.Grid()), tmp(Nd,Umu.Grid()); 
-        //    for (int mu = 0; mu < Nd; mu++) {
-        //        U[mu] = PeekIndex<LorentzIndex>(Umu,mu);}
-        //    for (int nu = 0; nu < Nd; nu++) {
-        //        int ns = dims[nu];
-        //        tmp[nu] = bc[nu]*
-        //};
+        virtual void gauge_apply_boundary(GaugeField &Umu, std::vector<int> bc) {
+            GaugeLinkField tmp1(Umu.Grid());
+            GaugeLinkField tmp2(Umu.Grid());
+            GaugeLinkField tmp3(Umu.Grid());
+            Lattice<iScalar<vInteger>> coord(Umu.Grid());
+
+            for (int mu = 0; mu < Nd; mu++) {
+                LatticeCoordinate(coord,mu);
+                
+                tmp1 = PeekIndex<LorentzIndex>(Umu,mu);
+                tmp2 = (double)bc[mu]*tmp1;
+                int dimSize = Umu.Grid()->GlobalDimensions()[mu] - 1;
+                tmp3 = where((coord == dimSize), tmp2, tmp1);
+                PokeIndex<LorentzIndex>(Umu, tmp3, mu);
+            }
+        };
 
         template <typename FImpl>
         FImpl generic_laplace(double a, double b, GaugeField &Umu, const FImpl& x_in, int skip_axis) {
@@ -250,24 +256,28 @@ class Evolution {
         };
 
         template <typename FImpl1, typename FImpl2>
-        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
+        void evolve_prop(GaugeField &U, FImpl1 &q1, FImpl2 &q2, std::vector<int> &bc) {
 
             std::vector<GaugeField> Wi = gauge_RK(U);
-            U = Wi[3];
+            U = 1.0*Wi[3];
 
-            // gauge boundary conditions needed here
+            gauge_apply_boundary(Wi[0],bc);
+            gauge_apply_boundary(Wi[1],bc);
+            gauge_apply_boundary(Wi[2],bc);
 
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);
         };
 
         template <typename FImpl1, typename FImpl2>
-        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2) {
+        void evolve_prop_adaptive(GaugeField &U, FImpl1 &q1, FImpl2 &q2, std::vector<int> &bc) {
 
             std::vector<GaugeField> Wi = gauge_RK_adaptive(U);
-            U = Wi[3];
+            U = 1.0*Wi[3];
 
-            // gauge boundary conditions needed here
+            gauge_apply_boundary(Wi[0],bc);
+            gauge_apply_boundary(Wi[1],bc);
+            gauge_apply_boundary(Wi[2],bc);
             
             laplace_flow<FImpl1>(Wi[0],Wi[1],Wi[2],q1);
             laplace_flow<FImpl2>(Wi[0],Wi[1],Wi[2],q2);

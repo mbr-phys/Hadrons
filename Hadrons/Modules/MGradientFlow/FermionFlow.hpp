@@ -48,6 +48,7 @@ public:
                                     std::string, q1,
                                     std::string, q2,
                                     std::string, gauge,
+                                    int, bc,
                                     int, steps,
                                     double, step_size,
                                     int, meas_interval,
@@ -83,8 +84,6 @@ public:
     virtual void setup(void);
     // action
     FlowAction SG = FlowAction(3.0);
-    // gauge measurements at each flow time
-    // void status(double time, GaugeField &Umu, auto &result, int step);
     // execution
     virtual void execute(void);
 };
@@ -162,7 +161,12 @@ void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::execute(void)
 
     LOG(Message) << "Setting up " << type << " Fermion Flow on '" << par().gauge << "' Gauge Field and "  << par().q1 
                  << (!(par().q2.empty()) ? ", "+par().q2+" Fermion Propagators " : " Fermion Propagator ")
-                 << "with " << par().steps << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
+                 << "with ppp" << ((par().bc < 0) ? "a" : "p") << " boundary conditions and "
+                 << par().steps << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
+
+    std::vector<int> bc = {1,1,1};
+    if (par().bc < 0) bc.push_back(-1);
+    else bc.push_back(1);
 
     double mTau = -1.0;
     if(!par().maxTau.empty()) {
@@ -199,12 +203,9 @@ void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::execute(void)
         unsigned int step = 0;
         do {
             step++;
-            evolve.template evolve_prop_adaptive<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf); 
+            evolve.template evolve_prop_adaptive<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf,bc); 
             evolve.gauge_status(Uwf,Uresult,step-1);
             if (step % par().meas_interval == 0) {
-                // need adaptive way to create right number of output PropagatorFields:
-                // current algorithm should output less than old method so we shouldn't lose
-                // any steps, but will output unneccessary empty propagators right now
                 std::stringstream st;
                 st << step;
                 auto &q1i = envGet(PropagatorField1, getName()+"_q1_"+st.str());
@@ -217,7 +218,7 @@ void TFermionFlow<FImpl1,FImpl2,GImpl,FlowAction>::execute(void)
         } while (evolve.taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
-            evolve.template evolve_prop<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf); 
+            evolve.template evolve_prop<PropagatorField1,PropagatorField2>(Uwf,q1wf,q2wf,bc); 
             evolve.gauge_status(Uwf,Uresult,step-1);
             if ((step % par().meas_interval == 0) || (step == par().steps)) {
                 std::stringstream st;

@@ -79,8 +79,6 @@ public:
     virtual void setup(void);
     // action
     FlowAction SG = FlowAction(3.0);
-    // gauge observable measurements at flow time
-    // void status(double time, GaugeField &Umu, auto &result, int step);
     // execution
     virtual void execute(void);
 };
