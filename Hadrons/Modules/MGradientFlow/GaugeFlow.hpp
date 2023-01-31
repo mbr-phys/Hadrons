@@ -118,7 +118,7 @@ template <typename GImpl,typename FlowAction>
 void TGaugeFlow<GImpl,FlowAction>::setup(void)
 {
     envCreateLat(GaugeField, getName()+"_U");
-    envCreate(HadronsGenericSerializable, getName(), 1, 0);
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -141,7 +141,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
         mTau = (double)std::stoi(par().maxTau);
     }
 
-    auto &out    = envGet(HadronsGenericSerializable, getName());
+    auto &out    = envGet(HadronsSerializable, getName());
     auto &result = out.template hold<Result>();
 
     auto &U   = envGet(GaugeField, par().gauge);
