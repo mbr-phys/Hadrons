@@ -286,8 +286,8 @@ class Evolution {
         };
         
         // gauge field status //////////////////////////////////////////////////////////
-        template <typename GImpl,typename GaugeField,typename ComplexField,typename GaugeLinkField>
-        void gauge_status(GaugeField &Umu, auto &result, int index)
+        template <typename GImpl,typename GaugeField,typename ComplexField,typename GaugeLinkField,typename Result>
+        void gauge_status(GaugeField &Umu, Result &result, int index)
         {
             double Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
             double plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);

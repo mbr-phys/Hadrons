@@ -157,7 +157,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
         result.clover.resize(1);
         result.topcharge.resize(1);
         result.action.resize(1);
-        evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField>(Uwf,result,0); 
+        evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,Result>(Uwf,result,0); 
     } else {
         result.plaquette.resize(par().steps);
         result.rectangle.resize(par().steps);
@@ -170,14 +170,14 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
                 step++;
                 evolve.template evolve_gauge_adaptive<GImpl,GaugeField>(Uwf);
                 if (step % par().meas_interval == 0) {
-                    evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField>(Uwf,result,step-1);
+                    evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,Result>(Uwf,result,step-1);
                 }
             } while (evolve.taus < mTau);
         } else {
             for (unsigned int step = 1; step <= par().steps; step++) {
                 evolve.template evolve_gauge<GImpl,GaugeField>(Uwf);
                 if (step % par().meas_interval == 0) {
-                    evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField>(Uwf,result,step-1);
+                    evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,Result>(Uwf,result,step-1);
                 }
             }
         }

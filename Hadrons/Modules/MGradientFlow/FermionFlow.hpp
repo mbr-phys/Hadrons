@@ -207,7 +207,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         do {
             step++;
             std::vector<GaugeField> Wi = evolve.template evolve_gaugeFF_adaptive<GImpl,GaugeField,GaugeLinkField>(Uwf,bc);
-            evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField>(Uwf,Uresult,step-1);
+            evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,GaugeResult>(Uwf,Uresult,step-1);
             if (step % par().meas_interval == 0) {
                 std::stringstream st; st << step;
                 for (int j = 0; j < par().props.size(); j++) {
@@ -222,7 +222,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
             std::vector<GaugeField> Wi = evolve.template evolve_gaugeFF<GImpl,GaugeField,GaugeLinkField>(Uwf,bc);
-            evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField>(Uwf,Uresult,step-1);
+            evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,GaugeResult>(Uwf,Uresult,step-1);
             if ((step % par().meas_interval == 0) || (step == par().steps)) {
                 std::stringstream st; st << step;
                 for (int j = 0; j < par().props.size(); j++) {
