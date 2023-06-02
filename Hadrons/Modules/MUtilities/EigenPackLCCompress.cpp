@@ -1,10 +1,9 @@
 /*
- * BaryonGamma3pt.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * EigenPackLCCompress.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -25,10 +24,17 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/BaryonGamma3pt.hpp>
+#include <Hadrons/Modules/MUtilities/EigenPackLCCompress.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MUtilities;
 
-template class Grid::Hadrons::MContraction::TBaryonGamma3pt<FIMPL>;
+template class Grid::Hadrons::MUtilities::TEigenPackLCCompress<FIMPL,HADRONS_DEFAULT_LANCZOS_NBASIS>;
+template class Grid::Hadrons::MUtilities::TEigenPackLCCompress<FIMPL,250>;
+template class Grid::Hadrons::MUtilities::TEigenPackLCCompress<FIMPL,400>;
+
+template class Grid::Hadrons::MUtilities::TEigenPackLCCompress<FIMPLF,HADRONS_DEFAULT_LANCZOS_NBASIS>;
+template class Grid::Hadrons::MUtilities::TEigenPackLCCompress<FIMPLF,250>;
+template class Grid::Hadrons::MUtilities::TEigenPackLCCompress<FIMPLF,400>;
+

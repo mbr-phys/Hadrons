@@ -1,10 +1,8 @@
 /*
- * BaryonGamma3pt.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * MixedPrecisionRBPrecCGBatched.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
  * Copyright (C) 2015 - 2020
  *
- * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk.com>
  * Author: Raoul Hodgson <raoul.hodgson@ed.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -25,10 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/BaryonGamma3pt.hpp>
+#include <Hadrons/Modules/MSolver/MixedPrecisionRBPrecCGBatched.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MSolver;
 
-template class Grid::Hadrons::MContraction::TBaryonGamma3pt<FIMPL>;
+template class Grid::Hadrons::MSolver::TMixedPrecisionRBPrecCGBatched<FIMPLF, FIMPLD>;
+template class Grid::Hadrons::MSolver::TMixedPrecisionRBPrecCGBatched<ZFIMPLF, ZFIMPLD>;
