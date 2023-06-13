@@ -1,11 +1,13 @@
 /*
  * Meson.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2020
+ * Copyright (C) 2015 - 2023
  *
  * Author: Antonin Portelli <antonin.portelli@me.com>
+ * Author: Felix Erben <felix.erben@ed.ac.uk>
  * Author: Fionn O hOgain <fionn.o.hogain@ed.ac.uk>
  * Author: Lanny91 <andrew.lawson@gmail.com>
+ * Author: Ryan Hill <rchrys.hill@gmail.com>
  * Author: Vera Guelpers <vmg1n14@soton.ac.uk>
  *
  * Hadrons is free software: you can redistribute it and/or modify
@@ -33,8 +35,8 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
-#include <Hadrons/Serialization.hpp>
 #include <Hadrons/TimerArray.hpp>
+#include <Hadrons/Serialization.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -69,7 +71,6 @@ public:
                                     std::string, q2,
                                     std::string, gammas,
                                     std::string, sink,
-                                    std::string, group,
                                     std::string, output);
 };
 
@@ -85,12 +86,9 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
-                                        std::string, module_name,
                                         Gamma::Algebra, gamma_snk,
                                         Gamma::Algebra, gamma_src,
                                         std::vector<Complex>, corr);
-        Result() {};
-        Result(uint16_t dummy) {};
     };
 public:
     // constructor
@@ -172,7 +170,12 @@ int TMeson<FImpl1, FImpl2>::parseGammaString(std::map<Gamma::Algebra, std::vecto
 template <typename FImpl1, typename FImpl2>
 std::vector<std::string> TMeson<FImpl1, FImpl2>::getInput(void)
 {
-    std::vector<std::string> input = {par().q1, par().q2, par().sink};
+    std::vector<std::string> input = {par().q1, par().q2};
+
+    if (!par().sink.empty())
+    {
+        input.push_back(par().sink);
+    }
     
     return input;
 }
@@ -188,11 +191,10 @@ std::vector<std::string> TMeson<FImpl1, FImpl2>::getOutput(void)
 template <typename FImpl1, typename FImpl2>
 std::vector<std::string> TMeson<FImpl1, FImpl2>::getOutputFiles(void)
 {
-    std::vector<std::string> output = {};
-    if (par().output.length())
-    { 
+    std::vector<std::string> output;
+    
+    if (!par().output.empty())
         output.push_back(resultFilename(par().output));
-    }
     
     return output;
 }
@@ -202,8 +204,8 @@ template <typename FImpl1, typename FImpl2>
 void TMeson<FImpl1, FImpl2>::setup(void)
 {
     envTmpLat(LatticeComplex, "c");
-    envCreate(HadronsSerializable, getName(), 1, 0);
     envTmpLat(LatticePropagator, "q1Gq2");
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -226,7 +228,6 @@ void TMeson<FImpl1, FImpl2>::execute(void)
     std::vector<TComplex>  buf;
     std::vector<Result>    result;
     Gamma                  g5(Gamma::Algebra::Gamma5);
-    std::vector<GammaPair> gammaList;
     int                    nt = env().getDim(Tp);
 
     std::map<Gamma::Algebra, std::vector<Gamma::Algebra>> gammaMap;
@@ -234,9 +235,6 @@ void TMeson<FImpl1, FImpl2>::execute(void)
     result.resize(nGammas);
     for (unsigned int i = 0; i < result.size(); ++i)
     {
-        result[i].module_name = getName();
-        result[i].gamma_snk = gammaList[i].first;
-        result[i].gamma_src = gammaList[i].second;
         result[i].corr.resize(nt);
     }
     if (envHasType(SlicedPropagator1, par().q1) and
@@ -246,14 +244,24 @@ void TMeson<FImpl1, FImpl2>::execute(void)
         auto &q2 = envGet(SlicedPropagator2, par().q2);
         
         LOG(Message) << "(propagator already sinked)" << std::endl;
-        for (unsigned int i = 0; i < result.size(); ++i)
+        unsigned int i = 0;
+        for(auto &ss: gammaMap)
         {
-            Gamma gSnk(gammaList[i].first);
-            Gamma gSrc(gammaList[i].second);
-            
-            for (unsigned int t = 0; t < nt; ++t)
+            Gamma::Algebra gammaSink = ss.first;
+            Gamma gSnk(gammaSink);
+            for (Gamma::Algebra &gammaSource: ss.second)
             {
-                result[i].corr[t] = TensorRemove(trace(mesonConnected(q1[t], q2[t], gSnk, gSrc)));
+                Gamma gSrc(gammaSource);
+            
+                startTimer("mesonConnected");
+                for (unsigned int t = 0; t < nt; ++t)
+                {
+                    result[i].corr[t] = TensorRemove(trace(mesonConnected(q1[t], q2[t], gSnk, gSrc)));
+                }
+                stopTimer("mesonConnected");
+                result[i].gamma_snk = gSnk.g;
+                result[i].gamma_src = gSrc.g;
+                i++;
             }
         }
     }
@@ -264,6 +272,10 @@ void TMeson<FImpl1, FImpl2>::execute(void)
         
         envGetTmp(LatticeComplex, c);
         envGetTmp(LatticePropagator, q1Gq2);
+        if (par().sink.empty())
+        {
+            HADRONS_ERROR(Definition, "no sink provided");
+        }
         LOG(Message) << "(using sink '" << par().sink << "')" << std::endl;
         unsigned int i = 0;
         for(auto &ss: gammaMap)
@@ -313,9 +325,9 @@ void TMeson<FImpl1, FImpl2>::execute(void)
     }
     startTimer("I/O");
     saveResult(par().output, "meson", result);
+    stopTimer("I/O");
     auto &out = envGet(HadronsSerializable, getName());
     out = result;
-    stopTimer("I/O");
 }
 
 END_MODULE_NAMESPACE
