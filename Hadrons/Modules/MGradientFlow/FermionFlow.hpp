@@ -31,6 +31,7 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Hadrons/TimerArray.hpp>
 #include <Hadrons/Modules/MGradientFlow/Utils.hpp>
 
 BEGIN_HADRONS_NAMESPACE
@@ -206,14 +207,18 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         unsigned int step = 0;
         do {
             step++;
+            startTimer("gauge field step");
             std::vector<GaugeField> Wi = evolve.template evolve_gaugeFF_adaptive<GImpl,GaugeField,GaugeLinkField>(Uwf,bc);
+            stopTimer("gauge field step");
             evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,GaugeResult>(Uwf,Uresult,step-1);
             if (step % par().meas_interval == 0) {
                 std::stringstream st; st << step;
                 for (int j = 0; j < par().props.size(); j++) {
                     std::stringstream jt; jt << j;
                     PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_q"+jt.str()+"wf");
+                    startTimer("fermion field "+jt.str()+" step");
                     evolve.template laplace_flow<PropagatorField,GImpl,GaugeField,GaugeLinkField>(Wi[0],Wi[1],Wi[2],qjwf);
+                    stopTimer("fermion field "+jt.str()+" step");
                     auto &qji = envGet(PropagatorField, getName()+"_q"+jt.str()+"_"+st.str());
                     qji = qjwf;
                 }
@@ -221,14 +226,18 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         } while (evolve.taus < mTau);
     } else {
         for (unsigned int step = 1; step <= par().steps; step++) {
+            startTimer("gauge field step");
             std::vector<GaugeField> Wi = evolve.template evolve_gaugeFF<GImpl,GaugeField,GaugeLinkField>(Uwf,bc);
+            stopTimer("gauge field step");
             evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,GaugeResult>(Uwf,Uresult,step-1);
             if ((step % par().meas_interval == 0) || (step == par().steps)) {
                 std::stringstream st; st << step;
                 for (int j = 0; j < par().props.size(); j++) {
                     std::stringstream jt; jt << j;
                     PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_q"+jt.str()+"wf");
+                    startTimer("fermion field "+jt.str()+" step");
                     evolve.template laplace_flow<PropagatorField,GImpl,GaugeField,GaugeLinkField>(Wi[0],Wi[1],Wi[2],qjwf);
+                    stopTimer("fermion field "+jt.str()+" step");
                     auto &qji = envGet(PropagatorField, getName()+"_q"+jt.str()+"_"+st.str());
                     qji = qjwf;
                 }
