@@ -97,7 +97,6 @@ template <typename Field>
 void TTranslat<Field>::setup(void)
 {
     envCreateLat(Field, getName());
-    envTmpLat(Field, "tmp");
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -110,18 +109,12 @@ void TTranslat<Field>::execute(void)
 
     auto &U   = envGet(Field, par().field);
     auto &Utr = envGet(Field, getName());
-    envGetTmp(Field, tmp);
-    tmp = U;
+    Utr = U;
     
     for (int dir = 0; dir < Nd; dir++) {
-        int length = par().xvec[dir];
-        if (length > 0) {
-            for (int j = 0; j < length; j++) {
-                tmp = Cshift(tmp,dir,1);
-            }
-        }
+        int coord = par().xvec[dir];
+        if (coord != 0) Utr = Cshift(Utr,dir,coord);
     }
-    Utr = tmp;
 }
 
 END_MODULE_NAMESPACE
