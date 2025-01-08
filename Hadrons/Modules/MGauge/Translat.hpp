@@ -98,6 +98,7 @@ template <typename GImpl>
 void TTranslat<GImpl>::setup(void)
 {
     envCreateLat(GaugeField, getName());
+    envTmpLat(GaugeField, "tmp");
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -110,25 +111,18 @@ void TTranslat<GImpl>::execute(void)
 
     auto &U   = envGet(GaugeField, par().gauge);
     auto &Utr = envGet(GaugeField, getName());
+    envGetTmp(GaugeField, tmp);
+    tmp = U;
     
-    std::vector<GaugeLinkField> Umu(Nd,U.Grid()), tmp(Nd,U.Grid());
-    for (int mu = 0; mu < Nd; mu++) {
-        Umu[mu] = PeekIndex<LorentzIndex>(U,mu);
-    }
     for (int dir = 0; dir < Nd; dir++) {
         int length = par().xvec[dir];
         if (length > 0) {
-            for (int nu = 0; nu < Nd; nu++) {
-                for (int j = 0; j < length; j++) {
-                    tmp[nu] = Cshift(Umu[nu],dir,1);
-                    Umu[nu] = tmp[nu];
-                }
+            for (int j = 0; j < length; j++) {
+                tmp = Cshift(tmp,dir,1);
             }
         }
     }
-    for (int mu = 0; mu < Nd; mu++) {
-        PokeIndex<LorentzIndex>(Utr, Umu[mu], mu);
-    }
+    Utr = tmp;
 }
 
 END_MODULE_NAMESPACE
