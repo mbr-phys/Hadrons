@@ -24,8 +24,8 @@
  */
 
 /*  END LEGAL */
-#ifndef Hadrons_MGauge_Translat_hpp_
-#define Hadrons_MGauge_Translat_hpp_
+#ifndef Hadrons_MUtilities_Translat_hpp_
+#define Hadrons_MUtilities_Translat_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -34,23 +34,21 @@
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                            Gauge translat                                  *
+ *                            Field Translat                                  *
  ******************************************************************************/
-BEGIN_MODULE_NAMESPACE(MGauge)
+BEGIN_MODULE_NAMESPACE(MUtilities)
 
 class TranslatPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(TranslatPar,
-                                    std::string, gauge,
+                                    std::string, field,
                                     std::vector<unsigned int>, xvec);
 };
 
-template <typename GImpl>
+template <typename Field>
 class TTranslat: public Module<TranslatPar>
 {
-public:
-    INHERIT_GIMPL_TYPES(GImpl);
 public:
     // constructor
     TTranslat(const std::string name);
@@ -65,28 +63,29 @@ public:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(Translat, TTranslat<GIMPL>, MGauge);
+MODULE_REGISTER_TMP(TranslatGaugeField, TTranslat<GIMPL::GaugeField>, MUtilities);
+MODULE_REGISTER_TMP(TranslatPropagatorField, TTranslat<FIMPL::PropagatorField>, MUtilities);
 
 /******************************************************************************
  *                     TTranslat implementation                          *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename GImpl>
-TTranslat<GImpl>::TTranslat(const std::string name)
+template <typename Field>
+TTranslat<Field>::TTranslat(const std::string name)
 : Module<TranslatPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename GImpl>
-std::vector<std::string> TTranslat<GImpl>::getInput(void)
+template <typename Field>
+std::vector<std::string> TTranslat<Field>::getInput(void)
 {
-    std::vector<std::string> in = {par().gauge};
+    std::vector<std::string> in = {par().field};
     
     return in;
 }
 
-template <typename GImpl>
-std::vector<std::string> TTranslat<GImpl>::getOutput(void)
+template <typename Field>
+std::vector<std::string> TTranslat<Field>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
     
@@ -94,24 +93,24 @@ std::vector<std::string> TTranslat<GImpl>::getOutput(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename GImpl>
-void TTranslat<GImpl>::setup(void)
+template <typename Field>
+void TTranslat<Field>::setup(void)
 {
-    envCreateLat(GaugeField, getName());
-    envTmpLat(GaugeField, "tmp");
+    envCreateLat(Field, getName());
+    envTmpLat(Field, "tmp");
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename GImpl>
-void TTranslat<GImpl>::execute(void)
+template <typename Field>
+void TTranslat<Field>::execute(void)
 {
-    LOG(Message) << "Shifting '" << par().gauge << "' by vector [" 
+    LOG(Message) << "Shifting '" << par().field << "' by vector [" 
                  << par().xvec[0] << " " << par().xvec[1] << " "
                  << par().xvec[2] << " " << par().xvec[3] << "]." << std::endl;
 
-    auto &U   = envGet(GaugeField, par().gauge);
-    auto &Utr = envGet(GaugeField, getName());
-    envGetTmp(GaugeField, tmp);
+    auto &U   = envGet(Field, par().field);
+    auto &Utr = envGet(Field, getName());
+    envGetTmp(Field, tmp);
     tmp = U;
     
     for (int dir = 0; dir < Nd; dir++) {
@@ -129,4 +128,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MGauge_Translat_hpp_
+#endif // Hadrons_MUtilities_Translat_hpp_

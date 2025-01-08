@@ -24,10 +24,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MGauge/Translat.hpp>
+#include <Hadrons/Modules/MUtilities/Translat.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MGauge;
+using namespace MUtilities;
 
-template class Grid::Hadrons::MGauge::TTranslat<GIMPL>;
+template class Grid::Hadrons::MUtilities::TTranslat<GIMPL::GaugeField>;
+template class Grid::Hadrons::MUtilities::TTranslat<FIMPL::PropagatorField>;
