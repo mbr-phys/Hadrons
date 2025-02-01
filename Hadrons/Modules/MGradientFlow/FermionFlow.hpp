@@ -67,11 +67,12 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(GaugeResult,
-                                        std::vector<double>, plaquette,
-                                        std::vector<double>, rectangle,
-                                        std::vector<double>, clover,
-                                        std::vector<double>, topcharge,
-                                        std::vector<double>, action);
+                                        std::vector<double>,    plaquette,
+                                        std::vector<double>,    rectangle,
+                                        std::vector<double>,    clover,
+                                        std::vector<double>,    topcharge,
+                                        std::vector<double>,    action,
+                                        std::vector<ComplexD>,  polyakov);
     };
 public:
     // constructor
@@ -189,6 +190,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
     Uresult.clover.resize(par().steps);
     Uresult.topcharge.resize(par().steps);
     Uresult.action.resize(par().steps);
+    Uresult.polyakov.resize(par().steps);
 
     auto &U   = envGet(GaugeField, par().gauge);
     auto &Uwf = envGet(GaugeField, getName()+"_U");

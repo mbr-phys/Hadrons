@@ -294,12 +294,14 @@ class Evolution {
             double rect = WilsonLoops<GImpl>::avgRectangle(Umu);
             double clov = avgClover<GImpl,ComplexField,GaugeField,GaugeLinkField>(Umu);
             double act = SG.S(Umu);
+            ComplexD poly = WilsonLoops<GImpl>::avgPolyakovLoop(Umu);
 
             result.plaquette[index] = plaq;
             result.rectangle[index] = rect;
             result.clover[index]    = clov;
             result.topcharge[index] =    Q;
             result.action[index]    =  act;
+            result.polyakov[index]  = poly;
         };
 };
 

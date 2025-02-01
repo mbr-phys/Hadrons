@@ -61,11 +61,12 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
-                                        std::vector<double>, plaquette,
-                                        std::vector<double>, rectangle,
-                                        std::vector<double>, clover,
-                                        std::vector<double>, topcharge,
-                                        std::vector<double>, action);
+                                        std::vector<double>,    plaquette,
+                                        std::vector<double>,    rectangle,
+                                        std::vector<double>,    clover,
+                                        std::vector<double>,    topcharge,
+                                        std::vector<double>,    action,
+                                        std::vector<ComplexD>,  polyakov);
     };
 public:
     // constructor
@@ -157,6 +158,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
         result.clover.resize(1);
         result.topcharge.resize(1);
         result.action.resize(1);
+        result.polyakov.resize(1);
         evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,Result>(Uwf,result,0); 
     } else {
         result.plaquette.resize(par().steps);
@@ -164,6 +166,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
         result.clover.resize(par().steps);
         result.topcharge.resize(par().steps);
         result.action.resize(par().steps);
+        result.polyakov.resize(par().steps);
         if (mTau > 0) {
             unsigned int step = 0;
             do {
