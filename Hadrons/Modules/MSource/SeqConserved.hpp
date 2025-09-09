@@ -77,7 +77,8 @@ public:
                                     unsigned int, mu_min,
                                     unsigned int, mu_max,
                                     std::string,  mom,
-                                    std::string,  photon);
+                                    std::string,  photon,
+                                    std::string,  projection);
 };
 
 template <typename FImpl>
@@ -135,6 +136,9 @@ template <typename FImpl>
 std::vector<std::string> TSeqConserved<FImpl>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
+
+    auto Ls_ = env().getObjectLs(par().action);
+    if (!par().projection.empty() && Ls_ > 1) out.push_back(par().projection);
     
    return out;
 }
@@ -158,6 +162,7 @@ void TSeqConserved<FImpl>::setup(void)
         if (Ls_ > 1)
         {
             envCreateLat(PropagatorField, getName(), Ls_);
+            if (!par().projection.empty()) envCreateLat(PropagatorField, par().projection);
         }
         else
         {
@@ -172,6 +177,11 @@ void TSeqConserved<FImpl>::setup(void)
         {
             envCreate(std::vector<PropagatorField>, getName(), Ls_, q.size(),
                       envGetGrid(PropagatorField, Ls_));
+            if (!par().projection.empty())
+            {
+                envCreate(std::vector<PropagatorField>, par().projection, 1, q.size(),
+                          envGetGrid(PropagatorField));
+            }
         }
         else
         {
@@ -243,6 +253,37 @@ void TSeqConserved<FImpl>::makeSource(PropagatorField &src, PropagatorField &q, 
 }
 
 template <typename FImpl>
+void TSeqConserved<FImpl>::projectSource(std::vector<PropagatorField *> &fullSrc, std::vector<PropagatorField *> &projSrc)
+{
+    envGetTmp(std::vector<FermionField>, source);
+    unsigned int j = 0;
+
+    LOG(Message) << "Import sources" << std::endl;
+    startTimer("Import sources");
+    for (unsigned int i = 0; i < source.size(); ++i)
+    for (unsigned int s = 0; i < Ns; ++s)
+    for (unsigned int c = 0; c < FImpl::Dimension; ++c)
+    {
+        PropToFerm<FImpl>(source[j], *(fullSrc[i]), s, c);
+        j++;
+    }
+    stopTimer("Import sources");
+
+    LOG(Message) << "Project sources" << std::endl;
+    startTimer("Export sources");
+    j = 0;
+    for (unsigned int i = 0; i < source.size(); ++i)
+    for (unsigned int s = 0; i < Ns; ++s)
+    for (unsigned int c = 0; c < FImpl::Dimension; ++c)
+    {
+        mat.ExportPhysicalFermionSolution(source[j], tmp);
+        FermToProp<FImpl>(*(projSrc[i]), tmp, s, c);
+        j++;
+    }
+    stopTimer("Export sources");
+}
+
+template <typename FImpl>
 void TSeqConserved<FImpl>::execute(void)
 {
     if (par().tA == par().tB)
@@ -285,6 +326,11 @@ void TSeqConserved<FImpl>::execute(void)
             LOG(Message) << "Using element " << i << " of propagator vector '" 
                          << par().q << "'" << std::endl;
             makeSource(src[i], q[i], physSrc[i]);
+        }
+
+        if (!par().projection.empty() && Ls_ > 1) 
+        {
+            LOG(Message) << "Projecting 5D object to 4D" << std::endl;
         }
     }
 }
