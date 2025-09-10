@@ -122,6 +122,13 @@ void Application::setPar(const Application::GlobalPar &par)
             LOG(Message) << "Schedule restored from application database" << std::endl;
         }
     }
+    if (!getPar().database.garbageDb.empty())
+    {
+        LOG(Message) << "Connecting to garbage database in file '"
+                     << getPar().database.garbageDb << "'..." << std::endl;
+        garbageDb_._setFilename(getPar().database.garbageDb, isGridInit() ? env().getGrid() : nullptr);
+        vm().setGarbageSchedule(garbageDb_);
+    }
     if (!getPar().database.resultDb.empty())
     {
         LOG(Message) << "Connecting to result database in file '" 

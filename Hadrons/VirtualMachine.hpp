@@ -185,6 +185,7 @@ public:
     void                printMemoryProfile(void) const;
     // garbage collection
     GarbageSchedule     makeGarbageSchedule(const Program &p) const;
+    GarbageSchedule     setGarbageSchedule(Database &garbageDb);
     // high-water memory function
     Size                memoryNeeded(const Program &p);
     // genetic scheduler
@@ -234,6 +235,9 @@ private:
     // time profile
     GridTime                            totalTime_;
     std::map<std::string, GridTime>     moduleTimeProfile_, moduleTypeTimeProfile_;               
+    // garbage collection
+    GarbageSchedule                     freeProg;
+    bool                                freeProgMade{false};
 };
 
 /******************************************************************************

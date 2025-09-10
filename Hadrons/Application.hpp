@@ -56,6 +56,7 @@ public:
     {
         GRID_SERIALIZABLE_CLASS_MEMBERS(DatabasePar,
                                         std::string,  applicationDb,
+                                        std::string,  garbageDb,
                                         std::string,  resultDb,
                                         bool,         restoreModules,
                                         bool,         restoreMemoryProfile,
@@ -142,7 +143,7 @@ private:
     std::string             parameterFileName_{""};
     GlobalPar               par_;
     VirtualMachine::Program program_;
-    Database                db_, resultDb_;
+    Database                db_, garbageDb_, resultDb_;
     Grid::MemoryStats       memStats_;
     bool                    scheduled_{false}, loadedSchedule_{false};
 };

@@ -778,62 +778,74 @@ void VirtualMachine::memoryProfile(const std::string name)
 }
 
 // garbage collector ///////////////////////////////////////////////////////////
-VirtualMachine::GarbageSchedule 
+VirtualMachine::GarbageSchedule& 
 VirtualMachine::makeGarbageSchedule(const Program &p) const
 {
-    GarbageSchedule freeProg;
-    
-    freeProg.resize(p.size());
-
-    // earliest time to destroy object ignoring dependencies
-    std::function<unsigned int(const unsigned int)> earliestTimeNoDep = 
-    [&](const unsigned int a)
+    if (freeProgMade) 
     {
+        return freeProg;
+    } else {
+        GarbageSchedule freeProg_;
         
-        auto pred = [a, this](const unsigned int b)
+        freeProg_.resize(p.size());
+
+        // earliest time to destroy object ignoring dependencies
+        std::function<unsigned int(const unsigned int)> earliestTimeNoDep = 
+        [&](const unsigned int a)
         {
-            auto &in = module_[b].input;
-            auto it  = std::find(in.begin(), in.end(), a);
             
-            return (it != in.end()) or (b == env().getObjectModule(a));
+            auto pred = [a, this](const unsigned int b)
+            {
+                auto &in = module_[b].input;
+                auto it  = std::find(in.begin(), in.end(), a);
+                
+                return (it != in.end()) or (b == env().getObjectModule(a));
+            };
+            auto it = std::find_if(p.rbegin(), p.rend(), pred);
+            assert(it != p.rend());
+
+            return std::distance(it, p.rend()) - 1;
         };
-        auto it = std::find_if(p.rbegin(), p.rend(), pred);
-        assert(it != p.rend());
 
-        return std::distance(it, p.rend()) - 1;
-    };
-
-    // earliest time to destroy object (taking dependencies into account)
-    std::function<unsigned int(const unsigned int)> earliestTime = 
-    [&](const unsigned int a)
-    {
-        unsigned int t = 0;
-
-        t = std::max(t, earliestTimeNoDep(a));
-        for (auto &d: env().getObjectDependencies(a))
+        // earliest time to destroy object (taking dependencies into account)
+        std::function<unsigned int(const unsigned int)> earliestTime = 
+        [&](const unsigned int a)
         {
-            t = std::max(t, earliestTime(d));
+            unsigned int t = 0;
+
+            t = std::max(t, earliestTimeNoDep(a));
+            for (auto &d: env().getObjectDependencies(a))
+            {
+                t = std::max(t, earliestTime(d));
+            }
+
+            return t;
+        };
+
+        for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
+        {
+            if (env().getObjectStorage(a) == Environment::Storage::standard)
+            {
+                freeProg_[earliestTime(a)].insert(a);
+            }
         }
 
-        return t;
-    };
-
-    for (unsigned int a = 0; a < env().getMaxAddress(); ++a)
-    {
-        if (env().getObjectStorage(a) == Environment::Storage::standard)
-        {
-            freeProg[earliestTime(a)].insert(a);
-        }
+        freeProgMade = true;
+        freeProg = freeProg_
+        return freeProg;
     }
-
-    return freeProg;
 }
+
+// VirtualMachine::GarbageSchedule VirtualMachine::setGarbageSchedule(Database &garbageDb) 
+// {
+//     
+// }
 
 // high-water memory function //////////////////////////////////////////////////
 VirtualMachine::Size VirtualMachine::memoryNeeded(const Program &p)
 {
     const MemoryProfile &profile = getMemoryProfile();
-    GarbageSchedule     freep    = makeGarbageSchedule(p);
+    GarbageSchedule&    freep    = makeGarbageSchedule(p);
     Size                current = 0, max = 0;
 
     for (unsigned int i = 0; i < p.size(); ++i)
@@ -971,16 +983,15 @@ VirtualMachine::Program VirtualMachine::naiveSchedule(void)
 void VirtualMachine::executeProgram(const Program &p)
 {
     Size            memPeak = 0, sizeBefore, sizeAfter;
-    GarbageSchedule freeProg;
     
     // build garbage collection schedule
     LOG(Debug) << "Building garbage collection schedule..." << std::endl;
-    freeProg = makeGarbageSchedule(p);
+    GarbageSchedule& freeProg_ = makeGarbageSchedule(p);
     for (unsigned int i = 0; i < freeProg.size(); ++i)
     {
         std::string msg = "";
 
-        for (auto &a: freeProg[i])
+        for (auto &a: freeProg_[i])
         {
             msg += env().getObjectName(a) + " ";
         }
