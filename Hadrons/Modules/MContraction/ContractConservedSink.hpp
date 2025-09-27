@@ -57,14 +57,14 @@ class ContractConservedSinkPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(ContractConservedSinkPar,
-                                    std::string,    prop,   // Name of the propagator we are checking Ward identity
-                                    std::string,    action,
-                                    std::string,    source,
-                                    std::string,    mom,
-                                    Gamma::Algebra, gammaSrc,
-                                    Current,        current,
-                                    unsigned int,   dir,
-                                    std::string,    output);
+                                    std::string,               prop,   
+                                    std::string,               action,
+                                    std::string,               source,
+                                    std::string,               gammaSrcs,
+                                    std::vector<std::string>,  moms,
+                                    Current,                   current,
+                                    std::vector<unsigned int>, dirs,
+                                    std::string,               output);
 };
 
 template <typename FImpl>
@@ -76,8 +76,10 @@ public:
     {
     public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
+                                        unsigned int,         direction,
                                         Current,              current, 
                                         Gamma::Algebra,       gamma_src,
+                                        std::string,          momentum,
                                         std::vector<Complex>, corr);
     };
 public:
@@ -153,6 +155,7 @@ void TContractConservedSink<FImpl>::setup(void)
     }
     // These temporaries are always 4d
     envTmpLat(PropagatorField, "tmp");
+    envTmpLat(PropagatorField, "tmp1");
     envTmpLat(ComplexField, "tmp_current");
     envCreate(HadronsSerializable, getName(), 1, 0);
 
@@ -173,63 +176,102 @@ void TContractConservedSink<FImpl>::execute(void)
     LOG(Message) << "Physical source " << par().source << std::endl;
     auto &phys_source = envGet(PropagatorField, par().source);
 
+    const int nt {env().getDim(Tp)};
+
     if ((par().current != Current::Vector) && (par().current != Current::Axial))
     {
         HADRONS_ERROR(Argument, "par().current should either be Current::Vector or Current::Axial");
     }
 
-    if (par().dir > 3) 
+    if (par().dirs.empty()) 
     {
-        HADRONS_ERROR(Argument, "par().dir should be an unsigned int = 0, 1, 2, or 3");
+        HADRONS_ERROR(Argument, "par().dirs cannot be empty");
     }
 
-    Gamma gSrc(par().gammaSrc);
+    bool dirCheck = std::any_of(par().dirs.begin(), par().dirs.end(), [](unsigned int v) { return v > 3; });
+    if (dirCheck)
+    {
+        HADRONS_ERROR(Argument, "par().dirs should be a vector of unsigned ints in {0, 1, 2, or 3}");
+    }
 
-    Result result;
-    result.gamma_src = par().gammaSrc;
-    result.current = par().current;
-    const int nt {env().getDim(Tp)};
-    result.corr.resize(nt,0.);
+    std::vector<Gamma::Algebra> gvec = strToVec<Gamma::Algebra>(par().gammaSrcs);
+    std::vector<Gamma> gSrcs;
+    for (auto gamma : gvec) 
+    {
+        gSrcs.push_back(gamma);
+    }
 
     envGetTmp(PropagatorField, tmp);
+    envGetTmp(PropagatorField, tmp1);
     envGetTmp(ComplexField, tmp_current);
     SlicedComplex sumGC(nt);
 
-    LOG(Message) << "Getting conserved current sink" << std::endl;    
-    act.ContractConservedCurrent(prop, prop, tmp, phys_source, par().current, par().dir);
+    std::vector<Result> results;
 
-    // include phase
-    if (!par().mom.empty()) 
+    std::vector<std::string> momenta(par().moms);
+    if (par().moms.empty())
     {
-        LOG(Message) << "Projecting to momentum [" << par().mom << "]" << std::endl;
-
-        auto &ph = envGet(LatticeComplex, momphName_);
-
-        Complex           i(0.0,1.0);
-        std::vector<Real> p;
-
-        envGetTmp(LatticeComplex, coor);
-        p  = strToVec<Real>(par().mom);
-        ph = Zero();
-        for (unsigned int mu = 0; mu < p.size(); mu++)
-        {
-            LatticeCoordinate(coor, mu);
-            ph = ph + (p[mu]/env().getDim(mu))*coor;
-        }
-        ph = exp((Real)(2*M_PI)*i*ph);
-
-        tmp = ph*tmp;
+        momenta = {""};
     }
 
-    //  trace it out
-    LOG(Message) << "Contracting with gSrc = " << par().gammaSrc << std::endl;
-    tmp_current = trace(gSrc*tmp);
-    SliceOut(result.corr, sumGC, tmp_current, false);
+    for (unsigned int mu : par().dirs)
+    {
+        LOG(Message) << "Getting conserved " << par().current << " current sink for direction " << mu << std::endl;    
+        act.ContractConservedCurrent(prop, prop, tmp, phys_source, par().current, mu);
 
-    saveResult(par().output, "conservedSink", result);
+        for (auto mom : momenta)
+        {
+            // include phase
+            if (mom.empty()) 
+            {
+                tmp1 = tmp;
+            }
+            else
+            {
+                LOG(Message) << "Projecting to momentum [" << mom << "]" << std::endl;
+
+                auto &ph = envGet(LatticeComplex, momphName_);
+
+                Complex           i(0.0,1.0);
+                std::vector<Real> p;
+
+                envGetTmp(LatticeComplex, coor);
+                p  = strToVec<Real>(mom);
+                ph = Zero();
+                for (unsigned int mu = 0; mu < p.size(); mu++)
+                {
+                    LatticeCoordinate(coor, mu);
+                    ph = ph + (p[mu]/env().getDim(mu))*coor;
+                }
+                ph = exp((Real)(2*M_PI)*i*ph);
+
+                tmp1 = ph*tmp;
+            }
+
+            for (unsigned int g = 0; g < gSrcs.size(); g++) 
+            {
+                Gamma gSrc = gSrcs[g];
+                LOG(Message) << "Contracting with gSrc = " << gvec[g] << std::endl;
+
+                Result result;
+                result.direction = mu;
+                result.gamma_src = gvec[g];
+                result.current = par().current;
+                result.momentum = mom;
+                result.corr.resize(nt,0.);
+
+                //  trace it out
+                tmp_current = trace(gSrc*tmp1);
+                SliceOut(result.corr, sumGC, tmp_current, false);
+
+                results.push_back(result);
+            }
+        }
+    }
+
+    saveResult(par().output, "conservedSink", results);
     auto &out = envGet(HadronsSerializable, getName());
-    out = result;
-
+    out = results;
 }
 
 END_MODULE_NAMESPACE
