@@ -148,7 +148,7 @@ public:
 
     void saveBlock(const DistilMatrixSetTimeSliceIo<T> &m, const uint iextstr,
                                const uint i, const uint j, std::string datasetName,
-                               const uint t, const uint chunkSize);
+                               const uint t, const uint chunkSize, std::string tName="");
 
     template <template <class> class Vec, typename VecT>    // compatibility with A2A
     void load(Vec<VecT> &v, const uint t, const std::string dataset_name, double *tRead = nullptr, GridBase *grid = nullptr);
@@ -250,14 +250,23 @@ void DistilMatrixIo<T>::saveBlock(const DistilMatrixSetTimeSliceIo<T> &m,
                             //    const uint ext, const uint str,
                                const uint iextstr,  //local
                                const uint i, const uint j, std::string datasetName,
-                               const uint t, const uint chunkSize)
+                               const uint t, const uint chunkSize,
+                               std::string tName)
 {
     uint blockSizei = m.dimension(1);
     uint blockSizej = m.dimension(2);
     // uint nextstr    = m.dimension(1);
     size_t       offset     = (iextstr*nt_ + t)*blockSizei*blockSizej;
 
-    std::string t_name = std::to_string(t);
+    std::string t_name;
+    if(tName=="")
+    {
+        t_name = std::to_string(t);
+    }
+    else
+    {
+        t_name = tName;
+    }
 
     saveBlock(m.data() + offset, i, j, blockSizei, blockSizej, t_name, datasetName, chunkSize);
 }
