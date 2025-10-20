@@ -108,7 +108,7 @@ public:
                                     uint,                               Nt,
                                     uint,                               Nvec,
                                     std::vector<RealF>,                         Momentum,
-                                    Gamma::Algebra,                             Operator,               // potentially more general operators in the future
+                                    std::string,                                Operator,               // the future is now
                                     std::vector<uint>,                  NoisePair,
                                     std::string,                                MesonFieldType,
                                     std::string,                                NoiseHashLeft,
