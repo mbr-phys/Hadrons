@@ -71,6 +71,7 @@ public:
                                     std::string, perambOutFileName,
                                     std::string, unsmSolveOutFileName,
                                     std::string, unsmSolve,
+                                    int,         save3DField,
                                     std::string, distilNoise,
                                     std::string, timeSources,
                                     pMode, perambMode,
@@ -280,6 +281,7 @@ void TPerambulator<FImpl>::execute(void)
         }
     }
 
+    int save3DField = par().save3DField;
 
     std::string sourceT = par().timeSources;
     std::vector<int> invT;
@@ -411,7 +413,21 @@ void TPerambulator<FImpl>::execute(void)
                         std::string sFileName(par().unsmSolveOutFileName);
                         sFileName.append("_noise");
                         sFileName.append(std::to_string(in));
-                        DistillationVectorsIo::writeComponent(sFileName, fermion4dtmp_vec[iSource], "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
+                        if(save3DField)
+                        {
+                            for (int t = Ntfirst; t < Ntfirst + Ntlocal; t++)
+                            {
+                                ExtractSliceLocal(fermion3dtmp,fermion4dtmp_vec[iSource],0,t-Ntfirst,Tdir);
+                                std::string tFileName = sFileName;
+                                tFileName.append("_t");
+                                tFileName.append(std::to_string(t));
+                                DistillationVectorsIo::writeComponent(tFileName, fermion3dtmp, "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
+                            }
+                        }
+                        else
+                        {
+                            DistillationVectorsIo::writeComponent(sFileName, fermion4dtmp_vec[iSource], "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
+                        }
                         STOP_P_TIMER("save solve");
                     }
                 }
