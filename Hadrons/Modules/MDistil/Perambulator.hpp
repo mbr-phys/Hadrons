@@ -260,6 +260,7 @@ void TPerambulator<FImpl>::execute(void)
     pMode perambMode{par().perambMode};
     LOG(Message)<< "Mode " << perambMode << std::endl;
     LOG(Message)<< "Source batch size = " << par().sourceBatchSize << std::endl;
+    LOG(Message)<< "Dimension: " << nD << std::endl;
 
     envGetTmp(FermionField,      fermion3dtmp);
     envGetTmp(ColourVectorField, cv4dtmp);
@@ -415,6 +416,7 @@ void TPerambulator<FImpl>::execute(void)
                         sFileName.append(std::to_string(in));
                         if(save3DField)
                         {
+                            LOG(Message) << "Saving 3D field" << std::endl;
                             for (int t = Ntfirst; t < Ntfirst + Ntlocal; t++)
                             {
                                 ExtractSliceLocal(fermion3dtmp,fermion4dtmp_vec[iSource],0,t-Ntfirst,Tdir);

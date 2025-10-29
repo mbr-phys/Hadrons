@@ -143,11 +143,16 @@ void TConvert3DField<FImpl>::execute(void)
 
     LOG(Message) << "TIMESOURCES = " + par().timeSources << std::endl;
     std::vector<int> timeSources;
-    if (!par().timeSources.empty()) {
+    if (!par().timeSources.empty()) 
+    {
         LOG(Message) << "LOADING timeSources = " + par().timeSources << std::endl;
         timeSources = strToVec<int>(par().timeSources); 
         Nt = timeSources.size();
         //nDT = timeSources.size();
+    } 
+    else
+    {
+        std::iota(timeSources.begin(), timeSources.end(), 0);
     }
 
     LOG(Message) << "CONVERSION set up with nDL = " << nDL << ", nDS = " << nDS << ", nDT = " << nDT << std::endl;
@@ -160,7 +165,8 @@ void TConvert3DField<FImpl>::execute(void)
     for (int t = 0; t < Ntlocal; t++ )
     {
         tH = t + Ntfirst;
-        for (int tD = 0; tD < Nt; tD++ )
+        //for (int tD = 0; tD < Nt; tD++ )
+        for (int tD : timeSources)
         {
             startTimer("read I/O");
             for(int id=0; id<nDL * nDS; id++)
@@ -169,6 +175,8 @@ void TConvert3DField<FImpl>::execute(void)
                 dk = index[DistillationNoise<FImpl>::Index::l];
                 ds = index[DistillationNoise<FImpl>::Index::s];
                 dSolve = dilNoise.dilutionIndex(tD,dk,ds);
+                /* LOG(Message) << "INDICES: index = [" << index[0] << "," << index[1] << "," << index[2] 
+                             << "], dk = " << dk << ", ds = " << ds << ", dSolve = " << dSolve << std::endl; */
                 std::string tFileName = par().inPath;
                 tFileName.append("_t");
                 tFileName.append(std::to_string(tH));
