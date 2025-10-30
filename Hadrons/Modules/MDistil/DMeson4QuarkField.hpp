@@ -35,6 +35,7 @@ class DMeson4QuarkFieldPar: Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(DMeson4QuarkFieldPar,
                                     std::string,                outPath,       // file stem for the out file
+                                    std::string,                DMesonStem,    // file stem for the D
                                     std::string,                DMesonField,   // M(rho,rho) meson field for the D
                                     std::string,                vectorStemC,   // charm
                                     std::string,                vectorStemL,   // SU(3) light
@@ -162,7 +163,7 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     envGetTmp(Vector<HADRONS_DISTIL_TYPE>, cache_buf);
     
     // read input D-meson field
-    std::string mfPath = par().DMesonField;   
+    std::string mfPath = par().DMesonStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + par().DMesonField;   
     LOG(Message) << "reading " << mfPath << std::endl;
     TimerArray timer;
     ContractionDistilMesonField<ComplexD,ComplexF> DMeson(mfPath,par().DMesSize, timer);
@@ -258,18 +259,15 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     startTimer("file creation");
     // file name of output
 
-    //size_t lastSlash = mfPath.find_last_of("/\\");
-    //std::string fname = (lastSlash == std::string::npos) ? fullPath : fullPath.substr(lastSlash + 1);
-    //size_t lastDot = filename.find_last_of('.');
-    //std::string DGamma = (lastDot == std::string::npos) ? filename : filename.substr(0, lastDot);
+    std::string DGamma = par().DMesonField.substr(0,par().DMesonField.find('_'));
 
     int iKpi=0;
     for(auto tKp : tKpi)
     {
         std::string outPath = par().outPath; 
         std::stringstream ss;
-        //ss << DGamma << "__" << par().gamma12 << "_" << par().gamma34 << "_p";
-        ss << par().gamma12 << "__" << par().gamma34 << "_p";
+        ss << DGamma << "__" << par().gamma12 << "_" << par().gamma34 << "_p";
+        //ss << par().gamma12 << "__" << par().gamma34 << "_p";
         for (unsigned int mu = 0; mu < p.size(); ++mu)
                 ss << p[mu] << ((mu == p.size() - 1) ? "" : "_");
         ss << ".h5";   
