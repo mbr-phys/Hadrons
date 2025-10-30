@@ -107,19 +107,19 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(DistilMesonFieldMetadata,
                                     uint,                               Nt,
                                     uint,                               Nvec,
-                                    std::vector<RealF>,                         Momentum,
-                                    std::string,                                Operator,               // the future is now
+                                    std::vector<RealF>,                 Momentum,
+                                    std::string,                        Operator, // the future is now
                                     std::vector<uint>,                  NoisePair,
-                                    std::string,                                MesonFieldType,
-                                    std::string,                                NoiseHashLeft,
-                                    std::string,                                NoiseHashRight,
+                                    std::string,                        MesonFieldType,
+                                    std::string,                        NoiseHashLeft,
+                                    std::string,                        NoiseHashRight,
                                     std::vector<std::vector<uint>>,     TimeDilutionLeft,
                                     std::vector<std::vector<uint>>,     TimeDilutionRight,
                                     std::vector<std::vector<uint>>,     LapDilutionLeft,
                                     std::vector<std::vector<uint>>,     LapDilutionRight,
                                     std::vector<std::vector<uint>>,     SpinDilutionLeft,
                                     std::vector<std::vector<uint>>,     SpinDilutionRight,
-                                    std::string,                                RelativeSide,
+                                    std::string,                        RelativeSide,
                                     )
 };
 
