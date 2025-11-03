@@ -259,7 +259,7 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     startTimer("file creation");
     // file name of output
 
-    std::string DGamma = par().DMesonField.substr(0,par().DMesonField.find('_'));
+    std::string DGamma = par().DMesonField.substr(0,par().DMesonField.find('.'));
 
     int iKpi=0;
     for(auto tKp : tKpi)
@@ -267,7 +267,6 @@ void TDMeson4QuarkField<FImpl>::execute(void)
         std::string outPath = par().outPath; 
         std::stringstream ss;
         ss << DGamma << "__" << par().gamma12 << "_" << par().gamma34 << "_p";
-        //ss << par().gamma12 << "__" << par().gamma34 << "_p";
         for (unsigned int mu = 0; mu < p.size(); ++mu)
                 ss << p[mu] << ((mu == p.size() - 1) ? "" : "_");
         ss << ".h5";   
