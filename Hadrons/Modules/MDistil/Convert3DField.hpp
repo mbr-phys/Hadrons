@@ -141,7 +141,7 @@ void TConvert3DField<FImpl>::execute(void)
     int nDS = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::s);        
     int nDT = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::t);        
 
-    LOG(Message) << "TIMESOURCES = " + par().timeSources << std::endl;
+    // LOG(Message) << "TIMESOURCES = " + par().timeSources << std::endl;
     std::vector<int> timeSources;
     if (!par().timeSources.empty()) 
     {
@@ -157,10 +157,10 @@ void TConvert3DField<FImpl>::execute(void)
 
     LOG(Message) << "CONVERSION set up with nDL = " << nDL << ", nDS = " << nDS << ", nDT = " << nDT << std::endl;
 
-    int dk,ds,dSolve,tH;
+    int dk,ds,dSolve,tH,skip;
     std::array<unsigned int, 3> index;
 
-
+    std::string filename = par().inPath + "." + std::to_string(vm.getTrajectory()) + ".bin"; // include _3D_pkg.traj.bin in inPath
 
     for (int t = 0; t < Ntlocal; t++ )
     {
@@ -175,15 +175,21 @@ void TConvert3DField<FImpl>::execute(void)
                 dk = index[DistillationNoise<FImpl>::Index::l];
                 ds = index[DistillationNoise<FImpl>::Index::s];
                 dSolve = dilNoise.dilutionIndex(tD,dk,ds);
+                skip = (tH+1)*dSolve;
+
                 /* LOG(Message) << "INDICES: index = [" << index[0] << "," << index[1] << "," << index[2] 
                              << "], dk = " << dk << ", ds = " << ds << ", dSolve = " << dSolve << std::endl; */
-                std::string tFileName = par().inPath;
+
+                /* std::string tFileName = par().inPath;
                 tFileName.append("_t");
-                tFileName.append(std::to_string(tH));
-                DistillationVectorsIo::readComponent(fermion3dtmp, tFileName, 1, nDL, nDS, nDT, dSolve, vm().getTrajectory());
+                tFileName.append(std::to_string(tH)); 
+                DistillationVectorsIo::readComponent(fermion3dtmp, tFileName, 1, nDL, nDS, nDT, dSolve, vm().getTrajectory()); */
+                DistillationVectorsIo::readPkgComponent(fermion3dtmp, fileName, 1, nDL, nDS, nDT, dSolve, skip); 
+                
                 // this is vector 2 on timeslice tH 
                 //ExtractSliceLocal(fermion3dtmp2,fermion4dtmp,0,t,Tdir);
                 //vector3d[id]=fermion3dtmp;
+
                 InsertSliceLocal(fermion3dtmp,fermionDDtmp,0,id,Tdir);
             }
             stopTimer("read I/O");
@@ -210,7 +216,6 @@ void TConvert3DField<FImpl>::execute(void)
 
         }
     }
-
 }
 
 END_MODULE_NAMESPACE

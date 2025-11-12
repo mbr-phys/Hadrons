@@ -283,6 +283,8 @@ void TPerambulator<FImpl>::execute(void)
     }
 
     int save3DField = par().save3DField;
+    GridBase        *grid = grid4d.Grid();
+    ScidacWriter    pWriter(grid->IsBoss());
 
     std::string sourceT = par().timeSources;
     std::vector<int> invT;
@@ -299,6 +301,17 @@ void TPerambulator<FImpl>::execute(void)
     std::vector<int> sourceIndices(sourceBatchSize);
     for (int inoise = 0; inoise < nNoise; inoise++)
     {
+        if(perambMode == pMode::saveSolveOnly or (perambMode == pMode::outputSolve and !par().unsmSolveOutFileName.empty()))
+        {
+            std::string pFileName(par().unsmSolveOutFileName);
+            pFileName += "_noise" + std::to_string(inoise); 
+            //pFileName.append(std::to_string(in)); // won't work because not in the loop, but want the writer outside the loop
+            if (save3DField) pFileName += "_3D";
+            pFileName += "_pkg." + std::to_string(vm.getTrajectory()) + ".bin";
+            makeFileDir(pFileName, grid);
+            pWriter.open(pFileName);
+        }
+
         for (int d = 0; d < nD; d++)
         {
             // create batched sources
@@ -411,24 +424,24 @@ void TPerambulator<FImpl>::execute(void)
                         idt=it - std::begin(invT);
                         // Index of the solve has the full time dimension
                         dIndexSolve = dilNoise.dilutionIndex(dt,dk,ds);
-                        std::string sFileName(par().unsmSolveOutFileName);
+                        /* std::string sFileName(par().unsmSolveOutFileName);
                         sFileName.append("_noise");
-                        sFileName.append(std::to_string(in));
+                        sFileName.append(std::to_string(in)); */
                         if(save3DField)
                         {
                             LOG(Message) << "Saving 3D field" << std::endl;
                             for (int t = Ntfirst; t < Ntfirst + Ntlocal; t++)
                             {
                                 ExtractSliceLocal(fermion3dtmp,fermion4dtmp_vec[iSource],0,t-Ntfirst,Tdir);
-                                std::string tFileName = sFileName;
+                                /* std::string tFileName = sFileName;
                                 tFileName.append("_t");
-                                tFileName.append(std::to_string(t));
-                                DistillationVectorsIo::writeComponent(tFileName, fermion3dtmp, "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
+                                tFileName.append(std::to_string(t)); */
+                                DistillationVectorsIo::componentWriter(pWriter, fermion3dtmp, "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
                             }
                         }
                         else
                         {
-                            DistillationVectorsIo::writeComponent(sFileName, fermion4dtmp_vec[iSource], "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
+                            DistillationVectorsIo::componentWriter(pWriter, fermion4dtmp_vec[iSource], "unsmSolve", nNoise, nDL, nDS, nDT, invT, in+nNoise*dIndexSolve, vm().getTrajectory());
                         }
                         STOP_P_TIMER("save solve");
                     }
@@ -463,7 +476,13 @@ void TPerambulator<FImpl>::execute(void)
             STOP_P_TIMER("perambulator computation");
             iSource=0;
         }
+
+        if(perambMode == pMode::saveSolveOnly or (perambMode == pMode::outputSolve and !par().unsmSolveOutFileName.empty()))
+        {
+            pWriter.close(); // close packaged file after loop
+        }
     }
+
 
     // Now share my timeslice data with other members of the grid
     const int NumSlices{grid4d->_processors[Tdir] / grid3d->_processors[Tdir]};
