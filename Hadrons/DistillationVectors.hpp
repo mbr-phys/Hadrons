@@ -74,7 +74,7 @@ public:
                          const bool multiFile, 
                          const int trajectory = -1);
     template <typename Field>
-    void DistillationVectorsIo::componentWriter(ScidacWriter &binWriter,
+    static void componentWriter(ScidacWriter &binWriter,
                          Field &vec, 
                          const std::string vecType, 
                          const int nNoise, 
@@ -112,6 +112,15 @@ public:
                          const int nDT, 
                          const int componentIndex, 
                          const int trajectory = -1);
+    template <typename Field>
+    static void pkgComponentReader(ScidacReader binReader,
+                         Field &vec, 
+                         const int nNoise, 
+                         const int nDL,
+                         const int nDS, 
+                         const int nDT, 
+                         const int componentIndex, 
+                         const int skip);
     template <typename Field>
     static void readPkgComponent(Field &vec, 
                          const std::string filename, 
@@ -318,7 +327,36 @@ void DistillationVectorsIo::componentReader(ScidacReader binReader,
     binReader.readScidacFieldRecord(vec, record);
     if (record.index != componentIndex)
     {
-        HADRONS_ERROR(Io, "vector index mismatch");
+        HADRONS_ERROR(Io, "vector index mismatch: record.index = " + std::to_string(record.index) + " and componentIndex = " + std::to_string(componentIndex));
+    }
+    if (record.nNoise != nNoise || record.nDL != nDL || record.nDS != nDS || record.nDT != nDT )
+    {
+        HADRONS_ERROR(Io, "dilution parameter mismatch");
+    }
+}
+
+template <typename Field>
+void DistillationVectorsIo::pkgComponentReader(ScidacReader binReader,
+                                    Field &vec, 
+                                    const int nNoise, 
+                                    const int nDL,
+                                    const int nDS, 
+                                    const int nDT, 
+                                    const int componentIndex, 
+                                    const int skip)
+{
+    for (unsigned int i = 0; i < skip; i++) 
+    {
+        binReader.skipScidacFieldRecord();
+    }
+
+    Record       record;
+
+    LOG(Message) << "Reading vector " << componentIndex << std::endl;
+    binReader.readScidacFieldRecord(vec, record);
+    if (record.index != componentIndex)
+    {
+        HADRONS_ERROR(Io, "vector index mismatch: record.index = " + std::to_string(record.index) + " and componentIndex = " + std::to_string(componentIndex));
     }
     if (record.nNoise != nNoise || record.nDL != nDL || record.nDS != nDS || record.nDT != nDT )
     {
@@ -357,7 +395,7 @@ void DistillationVectorsIo::readPkgComponent(Field &vec,
                                     const int skip)
 {
     ScidacReader binReader;
-    binReader.open(fullFilename);
+    binReader.open(filename);
     for (unsigned int i = 0; i < skip; i++) 
     {
         binReader.skipScidacFieldRecord();

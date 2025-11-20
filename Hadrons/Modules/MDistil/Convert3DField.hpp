@@ -160,14 +160,18 @@ void TConvert3DField<FImpl>::execute(void)
     int dk,ds,dSolve,tH,skip;
     std::array<unsigned int, 3> index;
 
-    std::string filename = par().inPath + "." + std::to_string(vm.getTrajectory()) + ".bin"; // include _3D_pkg.traj.bin in inPath
-
     for (int t = 0; t < Ntlocal; t++ )
     {
         tH = t + Ntfirst;
+
+        ScidacReader pReader;
+        std::string filename = par().inPath + "." + std::to_string(vm().getTrajectory()) + "/t" + std::to_string(t) + "_pkg.bin";
+        pReader.open(filename);
+
         //for (int tD = 0; tD < Nt; tD++ )
-        for (int tD : timeSources)
+        for (int tsrc=0; tsrc<timeSources.size(); tsrc++)
         {
+            int tD = timeSources[tsrc];
             startTimer("read I/O");
             for(int id=0; id<nDL * nDS; id++)
             {
@@ -175,16 +179,19 @@ void TConvert3DField<FImpl>::execute(void)
                 dk = index[DistillationNoise<FImpl>::Index::l];
                 ds = index[DistillationNoise<FImpl>::Index::s];
                 dSolve = dilNoise.dilutionIndex(tD,dk,ds);
-                skip = (tH+1)*dSolve;
+                skip = 0; // shouldn't need any skip as long as split files are always open
+                //skip = ds + nDS*(dk + nDL*tsrc); split file skip
+                //skip = t + nT*(ds + nDS*(dk + nDL*tsrc)); single file skip
 
-                /* LOG(Message) << "INDICES: index = [" << index[0] << "," << index[1] << "," << index[2] 
-                             << "], dk = " << dk << ", ds = " << ds << ", dSolve = " << dSolve << std::endl; */
+                LOG(Message) << "INDICES: t = " << t << ", tH = " << tH << ", tD = " << tD 
+                             << ", id = " << id << ", dSolve = " << dSolve << ", skip = " << skip << std::endl;
 
                 /* std::string tFileName = par().inPath;
                 tFileName.append("_t");
                 tFileName.append(std::to_string(tH)); 
                 DistillationVectorsIo::readComponent(fermion3dtmp, tFileName, 1, nDL, nDS, nDT, dSolve, vm().getTrajectory()); */
-                DistillationVectorsIo::readPkgComponent(fermion3dtmp, fileName, 1, nDL, nDS, nDT, dSolve, skip); 
+                //DistillationVectorsIo::readPkgComponent(fermion3dtmp, filename, 1, nDL, nDS, nDT, dSolve, skip); 
+                DistillationVectorsIo::pkgComponentReader(pReader, fermion3dtmp, 1, nDL, nDS, nDT, dSolve, skip); 
                 
                 // this is vector 2 on timeslice tH 
                 //ExtractSliceLocal(fermion3dtmp2,fermion4dtmp,0,t,Tdir);
@@ -215,6 +222,7 @@ void TConvert3DField<FImpl>::execute(void)
             stopTimer("write I/O");
 
         }
+        pReader.close();
     }
 }
 
