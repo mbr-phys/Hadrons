@@ -23,7 +23,9 @@ private:
     std::map<std::string, DistilMesonFieldMatrix<Tio>> mf_;    //core 
 public:
     ContractionDistilMesonField(std::string filename, unsigned int nt, TimerArray &timer);
+    ContractionDistilMesonField(std::string filename, unsigned int nt, TimerArray &timer, unsigned int tstart, unsigned int tend, std::string dname);
     void load(void);
+    void load_diagonal(unsigned int start_t, unsigned int end_t, std::string dataset_name);
     std::string getName(void), getFileName(void);
     std::vector<std::vector<unsigned int>> getAvailTimeSources(void);
 public:
@@ -48,6 +50,13 @@ ContractionDistilMesonField<T,Tio>::ContractionDistilMesonField(std::string file
 }
 
 template <typename T, typename Tio>
+ContractionDistilMesonField<T,Tio>::ContractionDistilMesonField(std::string filename, unsigned int nt, TimerArray &timer, unsigned int tstart, unsigned int tend, std::string dname)
+: filename_(filename), nt_(nt), io_distil_(filename, BASEGROUP, nt), tAr(timer)
+{
+    this->load_diagonal(tstart,tend,dname);
+}
+
+template <typename T, typename Tio>
 std::string ContractionDistilMesonField<T,Tio>::getFileName()
 {
     return filename_;
@@ -64,16 +73,15 @@ void ContractionDistilMesonField<T,Tio>::load(void)
         for(int t=0; t<nt_; t++)
         {   
             double timer = 0.;
-            //for(int T2=0; T2 < nDT; T2++)
-            //{
-            int T2 = t;
+            for(int T2=0; T2 < nDT; T2++)
+            {
                 double watch;
                 std::string dataset_name = std::to_string(t) + "-" + std::to_string(T2);
                 std::string key = "/" + std::to_string(t) + "/" + dataset_name;
                 mf_.emplace(key, DistilMesonFieldMatrix<Tio>() );
                 io_distil_.load(mf_.at(key), t, dataset_name, &watch, nullptr);
                 timer += watch;
-            //}
+            }
             CLOCK() << "= Read timeslice " << t << " at "<<  io_distil_.getSize()*nDT/timer*1.0e6/1024/1024 << " MB/s" << std::endl;
             total_time += timer;
         }
@@ -86,5 +94,39 @@ void ContractionDistilMesonField<T,Tio>::load(void)
     }
 }
 
+template <typename T, typename Tio>
+void ContractionDistilMesonField<T,Tio>::load_diagonal(unsigned int start_t, unsigned int end_t, std::string dataset_name)
+{
+    bool update_dname = dataset_name.empty();
+    unsigned int nDT = nt_;
+    if(mf_.empty())
+    {
+        //assuming exact distillation with all time sources, assuming rho-phi type
+        double total_time = 0.;
+        for(int t=start_t; t<=end_t; t++)
+        {   
+            double timer = 0.;
+            //for(int T2=0; T2 < nDT; T2++)
+            //{
+            int T2 = t;
+            double watch;
+            if (update_dname) dataset_name = std::to_string(t) + "-" + std::to_string(T2);
+            std::string key = "/" + std::to_string(t) + "/" + dataset_name;
+            std::cout << "loading key = " << key << std::endl;
+            mf_.emplace(key, DistilMesonFieldMatrix<Tio>() );
+            io_distil_.load(mf_.at(key), t, dataset_name, &watch, nullptr);
+            timer += watch;
+            //}
+            CLOCK() << "= Read timeslice " << t << " at "<<  io_distil_.getSize()*nDT/timer*1.0e6/1024/1024 << " MB/s" << std::endl;
+            total_time += timer;
+        }
+        double block_size = io_distil_.getSize();
+        double timeslice_size = block_size * nDT;
+        double total_size = timeslice_size * nt_;
+        CLOCK() << "== Size per dilution block : " << block_size/1024/1024 << " MB" << std::endl;
+        CLOCK() << "== Total size read : " << total_size/1024/1024 << " MB" << std::endl;
+        CLOCK() << "== Average read speed : " << total_size/total_time*1.0e6/1024/1024 << " MB/s" << std::endl;
+    }
+}
 
 #endif
