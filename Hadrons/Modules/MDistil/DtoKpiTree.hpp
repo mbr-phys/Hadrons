@@ -138,6 +138,8 @@ void TDtoKpiTree<FImpl>::setup(void)
 
     envTmp(FermionField,    "fermionDDtmp_light" ,1, gridDD);
     envTmp(FermionField,    "fermionDDtmp_charm" ,1, gridDD);
+
+    envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
