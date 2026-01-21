@@ -37,20 +37,22 @@ class DtoKpiTreePar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(DtoKpiTreePar,
-                                    std::string,                output,       // file stem for the out file
-                                    std::string,                RhoRhoStem,    // file stem for the rho-rho MFs
-                                    std::string,                RhoPhiStem,    // file stem for the rho-phi MFs
-                                    std::string,                RhoRhoField,   // M(rho,rho) meson field for the Kpi
-                                    std::string,                RhoPhiField,   // M(rho,phi) meson field for the Kpi
-                                    std::string,                DMesonField,   // M(rho,rho) meson field for the D
-                                    std::string,                vectorStemC,   // charm
-                                    std::string,                vectorStemL,   // SU(3) light
-                                    std::string,                noisePol,      // noise policy of v1 - assert compatibility with M(rho,rho) 
-                                    std::vector<unsigned int>,  tDs,           // times of D meson
-                                    std::vector<unsigned int>,  tKpis,         // times of Kpi mesons
-                                    std::string,                gammas,        // list of space-separated pairs of gamma matrices (g12 g34)
-                                    std::string,                mom,           // momentum injected into Hw
-                                                                                );
+                                    std::string,               output,       // file stem for the out file
+                                    std::string,               RhoRhoStem,    // file stem for the rho-rho MFs
+                                    std::string,               RhoPhiStem,    // file stem for the rho-phi MFs
+                                    std::string,               RhoRhoField,   // M(rho,rho) meson field for the Kpi
+                                    std::string,               RhoPhiField,   // M(rho,phi) meson field for the Kpi
+                                    std::string,               DMesonField,   // M(rho,rho) meson field for the D
+                                    std::string,               vectorStemC,   // charm
+                                    std::string,               vectorStemL,   // SU(3) light
+                                    std::string,               noisePol,      // noise policy of v1 - assert compatibility with M(rho,rho) 
+                                    std::vector<unsigned int>, tDs,           // times of D meson
+                                    std::vector<unsigned int>, tKpis,         // times of Kpi mesons
+                                    std::string,               gammas,        // list of space-separated pairs of gamma matrices (g12 g34)
+                                    std::string,               momHw,         // momentum injected into Hw
+                                    std::vector<std::string>,  momsD,         // list of momenta of incoming D meson
+                                    std::vector<std::string>,  momsKpi,       // list of possible momenta of final states (if empty, will assume all up to P^2=4
+                                   );
 };
 
 template <typename FImpl>
@@ -66,6 +68,10 @@ public:
                                         std::string,          gammaKpi_rhorho,
                                         std::string,          gammaKpi_rhophi,
                                         std::string,          gammaHw,
+                                        std::string,          momD,
+                                        std::string,          momKpi_rhorho,
+                                        std::string,          momKpi_rhophi,
+                                        std::string,          momHw,
                                         unsigned int,         tD,
                                         unsigned int,         tKpi,
                                         std::vector<Complex>, corr);
@@ -153,29 +159,142 @@ void TDtoKpiTree<FImpl>::execute(void)
     const int Ntfirst{gridHD->LocalStarts()[Tdir]};
     int nT=env().getDim(Tdir);
 
+    std::vector<std::string> Dmoms, Kpilist;
+    std::map<std::string, std::vector<std::vector<std::string>>> Kpimoms;
+    int nMoms = 0;
+
+    if (par().momsKpi.empty()) 
+    {
+        LOG(Message) << "You have not specified any K-pi momenta, so all possible combinations up to P^2 = 4 will be listed." << std::endl;
+    }
+    else
+    {
+        LOG(Message) << "Using " << par().momsKpi.size() << " possible K-pi momenta provided." << std::endl;
+    }
+
+    for (auto dmom : par().momsD)
+    {
+        std::vector<int> dmomI = strToVec<int>(dmom);
+        std::string dstr = std::to_string(dmomI[0]) + "_" + std::to_string(dmomI[1]) + "_" + std::to_string(dmomI[2]);
+        Dmoms.push_back(dstr);
+        // if no momsKpi given, loop over all possible combinations up to P^2 = 4
+        std::vector<std::vector<std::string>> Kpims;
+        if (par().momsKpi.empty())
+        {
+            for (int i = -2; i <= 2; i++)
+            {
+                for (int j = -2; j <= 2; j++)
+                {
+                    for (int k = -2; k <= 2; k++)
+                    {
+                        int Kpi1P2 = i*i + j*j + k*k;
+                        if (Kpi1P2 <= 4)
+                        {
+                            std::string Kpimom1 = std::to_string(i) + "_" + std::to_string(j) + "_" + std::to_string(k);
+                            //for (int l = -2; l <= 2; l++)
+                            //{
+                            //    for (int m = -2; m <= 2; m++)
+                            //    {
+                            //        for (int n = -2; n <= 2; n++)
+                            //        {
+                            int o(dmomI[0]-i), p(dmomI[1]-j), q(dmomI[2]-k);
+                            int Kpi2P2 = o*o + p*p + q*q;
+                            if ((std::abs(o) <= 2) && (std::abs(p) <= 2) && (std::abs(q) <= 2) && (Kpi2P2 <= 4))
+                            {
+                                        //int Kpi2P2 = l*l + m*m + n*n;
+                                        //if (Kpi2P2 <= 4)
+                                        //{
+                                std::string Kpimom2 = std::to_string(o) + "_" + std::to_string(p) + "_" + std::to_string(q);
+                                            //int o(i+l), p(j+m), q(k+n);
+                                            //if (dmomI[0] == o && dmomI[1] == p && dmomI[2] == q)
+                                            //{
+                                std::vector<std::string> Kpis = {Kpimom1, Kpimom2};
+                                Kpims.push_back(Kpis);
+                                if (std::find(Kpilist.begin(), Kpilist.end(), Kpimom1) == Kpilist.end())
+                                {
+                                    Kpilist.push_back(Kpimom1);
+                                }
+                                if (std::find(Kpilist.begin(), Kpilist.end(), Kpimom2) == Kpilist.end())
+                                {
+                                    Kpilist.push_back(Kpimom2);
+                                }
+                                nMoms++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (auto kmom : par().momsKpi) 
+            {
+                std::vector<int> kmomI = strToVec<int>(kmom);
+                std::string Kpimom1 = std::to_string(kmomI[0]) + "_" + std::to_string(kmomI[1]) + "_" + std::to_string(kmomI[2]);
+                int Kpi1P2 = kmomI[0]*kmomI[0] + kmomI[1]*kmomI[1] + kmomI[2]*kmomI[2];
+                int o(dmomI[0]-kmomI[0]), p(dmomI[1]-kmomI[1]), q(dmomI[2]-kmomI[2]);
+                int Kpi2P2 = o*o + p*p + q*q;
+                if ((std::abs(o) <= 2) && (std::abs(p) <= 2) && (std::abs(q) <= 2) && (Kpi2P2 <= 4))
+                {
+                    std::string Kpimom2 = std::to_string(o) + "_" + std::to_string(p) + "_" + std::to_string(q);
+                    std::vector<std::string> Kpis = {Kpimom1, Kpimom2};
+                    Kpims.push_back(Kpis);
+                    if (std::find(Kpilist.begin(), Kpilist.end(), Kpimom1) == Kpilist.end())
+                    {
+                        Kpilist.push_back(Kpimom1);
+                    }
+                    if (std::find(Kpilist.begin(), Kpilist.end(), Kpimom2) == Kpilist.end())
+                    {
+                        Kpilist.push_back(Kpimom2);
+                    }
+                    nMoms++;
+                }
+            }
+        }
+        Kpimoms.try_emplace(dstr, Kpims);
+        LOG(Message) << "Will calculate " << Kpims.size() << " K-pi final state combinations for D meson momentum = " + dmom << std::endl;
+    }
+
     // read input D-meson field
-    std::string mfPath = par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + par().DMesonField;   
-    LOG(Message) << "reading " << mfPath << std::endl;
-    TimerArray timer;
-    // TODO: consider making a loader to directly get every e.g. 4th time slice instead of sequentially 
-    ContractionDistilMesonField<ComplexD,ComplexF> DMesonMF(mfPath, nT, timer, 0, nT-1, "");
-    std::string DGamma = par().DMesonField.substr(0,par().DMesonField.find('.'));
+    std::string DGamma = par().DMesonField;
+    std::map<std::string, ContractionDistilMesonField<ComplexD,ComplexF>> RhoRhoMesonMFs;
+    startTimer("MesonField IO");
+    for (auto dmom : Dmoms)
+    {
+        std::string mfPath = par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + DGamma + "_p" + dmom + ".h5";   
+        LOG(Message) << "reading " << mfPath << std::endl;
+        TimerArray timer;
+        // TODO: consider making a loader to directly get every e.g. 4th time slice instead of sequentially 
+        RhoRhoMesonMFs.try_emplace(DGamma+"_p"+dmom, ContractionDistilMesonField<ComplexD,ComplexF>(mfPath, nT, timer, 0, nT-1, ""));
+    }
 
-    // read input Kpi rhorho field
-    mfPath = par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + par().RhoRhoField;   
-    LOG(Message) << "reading " << mfPath << std::endl;
-    TimerArray timer1;
-    // TODO: consider making a loader to directly get every e.g. 4th time slice instead of sequentially 
-    ContractionDistilMesonField<ComplexD,ComplexF> RhoRhoMF(mfPath, nT, timer1, 0, nT-1, "");
-    std::string RhoRhoGamma = par().RhoRhoField.substr(0,par().RhoRhoField.find('.'));
+    // read input Kpi fields
+    std::string RhoRhoGamma = par().RhoRhoField;
+    std::string RhoPhiGamma = par().RhoPhiField;
+    std::map<std::string, ContractionDistilMesonField<ComplexD,ComplexF>> RhoPhiMesonMFs;
+    for (auto kmom : Kpilist)
+    {
+        std::string mfPath = par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + RhoRhoGamma + "_p" + kmom + ".h5";   
+        TimerArray timer1;
+        // try_emplace RhoRhoMesonMFs to stop redundant loading b/w here and D meson
+        auto it = RhoRhoMesonMFs.find(RhoRhoGamma+"_p"+kmom);
+        if (it == RhoRhoMesonMFs.end()) 
+        {
+            LOG(Message) << "reading " << mfPath << std::endl;
+            RhoRhoMesonMFs.try_emplace(RhoRhoGamma+"_p"+kmom, ContractionDistilMesonField<ComplexD,ComplexF>(mfPath, nT, timer1, 0, nT-1, ""));
+        }
+        else
+        {
+            LOG(Message) << "already read " << mfPath << std::endl;
+        }
 
-    // read input Kpi rhophi field
-    mfPath = par().RhoPhiStem + "rho-phi." + std::to_string(vm().getTrajectory()) + "/" + par().RhoPhiField;   
-    LOG(Message) << "reading " << mfPath << std::endl;
-    TimerArray timer2;
-    // TODO: consider making a loader to directly get every e.g. 4th time slice instead of sequentially 
-    ContractionDistilMesonField<ComplexD,ComplexF> RhoPhiMF(mfPath, nT, timer2);
-    std::string RhoPhiGamma = par().RhoPhiField.substr(0,par().RhoPhiField.find('.'));
+        // read in later to not have OOM
+        // mfPath = par().RhoPhiStem + "rho-phi." + std::to_string(vm().getTrajectory()) + "/" + RhoPhiGamma + "_p" + kmom + ".h5";   
+        // LOG(Message) << "reading " << mfPath << std::endl;
+        // TimerArray timer2;
+        // RhoPhiMesonMFs.try_emplace(RhoPhiGamma+"_p"+kmom, ContractionDistilMesonField<ComplexD,ComplexF>(mfPath, nT, timer2));
+    }
+    stopTimer("MesonField IO");
 
     // noise class -- assert they are identical and an "exact distillation" policy
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
@@ -202,7 +321,10 @@ void TDtoKpiTree<FImpl>::execute(void)
     std::vector<GammaPair> gammas = strToVec<GammaPair>(par().gammas);
 
     std::vector<Result> results;
-    results.resize(gammas.size()*tDs.size()*tKpis.size());
+    int resultSize = gammas.size()*tDs.size()*tKpis.size()*nMoms;
+    results.resize(resultSize);
+    LOG(Message) << "Resized results object to gammas (" << gammas.size() << ") * tDs (" << tDs.size() 
+                 << ") * tKpis (" << tKpis.size() << ") * nMoms (" << nMoms << ") = " << resultSize << std::endl;
     
     // Temporary objects
     envGetTmp(FermionField,    fermion3dtmp1);
@@ -215,7 +337,7 @@ void TDtoKpiTree<FImpl>::execute(void)
     // momentum phase e^{ipx} for Hw
     Complex           i(0.0,1.0);
     std::vector<Real> p;
-    p  = strToVec<Real>(par().mom);
+    p  = strToVec<Real>(par().momHw);
     envGetTmp(ComplexField, coor);
     envGetTmp(ComplexField, ph);
     envGetTmp(ComplexField, ph3d);
@@ -262,15 +384,15 @@ void TDtoKpiTree<FImpl>::execute(void)
                 }     
             }
 
-            for (unsigned int i = 0; i < gammas.size(); i++)
+            for (unsigned int i = 0; i < nMoms*gammas.size(); i++)
             {
-                unsigned int ridx = rdx*gammas.size() + i;
+                unsigned int ridx = rdx*nMoms*gammas.size() + i;
                 results[ridx].corr.resize(tHs.size());
             }
 
             LOG(Message) << "WARNING: Assuming ordering s + ns*(l + nl*t) in DilutedNoise.hpp. This code will break when this changes!" << std::endl;
             int tH;
-            std::vector<TComplex>  buf;
+            std::vector<TComplex> buf;
             std::string tFileName;
 
             for (int t = 0; t < Ntlocal; t++)
@@ -311,68 +433,104 @@ void TDtoKpiTree<FImpl>::execute(void)
                 // 3D phase e^{ipx}
                 ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
 
-                unsigned int sdx = 0;
-                for (unsigned int sdx = 0; sdx < gammas.size(); sdx++)
+                unsigned int tdx = rdx*nMoms*gammas.size();
+                for (unsigned int ddx = 0; ddx < Dmoms.size(); ddx++) 
                 {
-                    unsigned int tdx = rdx*gammas.size() + sdx;
+                    std::string dmom = Dmoms[ddx];
+                    std::vector<std::vector<std::string>> Kmoms = Kpimoms.at(dmom);
 
-                    Gamma::Algebra gam12 = gammas[sdx].first, gam34 = gammas[sdx].second;
-                    Gamma g12(gam12), g34(gam34);
+                    ContractionDistilMesonField<ComplexD,ComplexF> &DMesonMF = RhoRhoMesonMFs.at(DGamma+"_p"+dmom);
 
-                    //   contract 2xphi_l with Kpi(rho,rho)
-                    // & contract phi_l, phi_c, DMesonMF
-                    // TODO: this needs to be smarter for colour-suppressed diagram variant
-                    for (int id1=0; id1<nDL*nDS; id1++)
+                    for (unsigned int kdx = 0; kdx < Kmoms.size(); kdx++)
                     {
-                        ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id1, Tdir);
-                        startTimer("computation contractPhis");
-                        for (int id2=0; id2<nDL*nDS; id2++)
+                        std::string Kmom1 = Kmoms[kdx][0], Kmom2 = Kmoms[kdx][1];
+
+                        ContractionDistilMesonField<ComplexD,ComplexF> &RhoRhoMF = RhoRhoMesonMFs.at(RhoRhoGamma+"_p"+Kmom1);
+
+                        startTimer("MesonField IO");
+                        std::string mfPath = par().RhoPhiStem + "rho-phi." + std::to_string(vm().getTrajectory()) + "/" + RhoPhiGamma + "_p" + Kmom2 + ".h5";   
+                        LOG(Message) << "reading " << mfPath << std::endl;
+                        TimerArray timer2;
+                        std::vector<std::vector<int>> tDtKpi = {{(int)tKpi,(int)tD}}; // only read one entry from h5 file
+                        ContractionDistilMesonField<ComplexD,ComplexF> RhoPhiMF(mfPath, nT, timer2, tDtKpi);
+                        stopTimer("MesonField IO");
+
+                        for (unsigned int sdx = 0; sdx < gammas.size(); sdx++)
                         {
-                            ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
-                            fermion3dtmp3 = g12*fermion3dtmp2;
-                            fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id2);
-                            prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp2);
-                            // this object is sum_{spin,colour,d1,d2} (DMeson[d1,d2] * vector1[d1] * gamma12 * vector2[d2]) on timeslice tH
-                            MKpiPhi += trace(prop3dtmp);
+                            Gamma::Algebra gam12 = gammas[sdx].first, gam34 = gammas[sdx].second;
+                            Gamma g12(gam12), g34(gam34);
 
-                            ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
-                            fermion3dtmp3 = g34*fermion3dtmp1;
-                            fermion3dtmp1 = fermion3dtmp3*RhoPhiMF(tKpi,tKpi,tD)(id1,id2)*DMesonMF(tD,tD,tD)(id1,id2);
-                            prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp1);
-                            MDPhi += trace(prop3dtmp);
+                            //   contract 2xphi_l with Kpi(rho,rho)
+                            // & contract phi_l, phi_c, DMesonMF
+                            // TODO: this needs to be smarter for colour-suppressed diagram variant
+                            for (int id1=0; id1<nDL*nDS; id1++)
+                            {
+                                startTimer("ExtractSliceLocal");
+                                ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id1, Tdir);
+                                stopTimer("ExtractSliceLocal");
+                                for (int id2=0; id2<nDL*nDS; id2++)
+                                {
+                                    startTimer("ExtractSliceLocal");
+                                    ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
+                                    stopTimer("ExtractSliceLocal");
+                                    startTimer("computation contractPhis");
+                                    fermion3dtmp3 = g12*fermion3dtmp2;
+                                    fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id2);
+                                    prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp2);
+                                    // this object is sum_{spin,colour,d1,d2} (DMeson[d1,d2] * vector1[d1] * gamma12 * vector2[d2]) on timeslice tH
+                                    MKpiPhi += trace(prop3dtmp);
+                                    stopTimer("computation contractPhis");
+
+                                    startTimer("ExtractSliceLocal");
+                                    ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
+                                    stopTimer("ExtractSliceLocal");
+                                    startTimer("computation contractPhis");
+                                    fermion3dtmp3 = g34*fermion3dtmp1;
+                                    fermion3dtmp1 = fermion3dtmp3*RhoPhiMF(tKpi,tKpi,tD)(id1,id2)*DMesonMF(tD,tD,tD)(id1,id2);
+                                    prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp1);
+                                    MDPhi += trace(prop3dtmp);
+                                    stopTimer("computation contractPhis");
+                                }
+                            }
+                            startTimer("final contraction");
+                            MKpiPhi = MDPhi*MKpiPhi*ph3d;
+                            sliceSum(MKpiPhi, buf, Tdir);
+
+                            LOG(Message) << "Updating results for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                            results[tdx].corr[tHi] = TensorRemove(buf[0]);
+
+                            if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
+                            {
+                                LOG(Message) << "Updating metadata for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                                std::stringstream gHw;
+                                gHw << "(" << gam12 << " " << gam34 << ")";
+                                results[tdx].gammaHw         = gHw.str();
+                                results[tdx].gammaD          = DGamma;
+                                results[tdx].gammaKpi_rhorho = RhoRhoGamma;
+                                results[tdx].gammaKpi_rhophi = RhoPhiGamma;
+                                results[tdx].momD            = dmom;
+                                results[tdx].momKpi_rhorho   = Kmom1;
+                                results[tdx].momKpi_rhophi   = Kmom2;
+                                results[tdx].momHw           = par().momHw;
+                                results[tdx].tD              = tD;
+                                results[tdx].tKpi            = tKpi;
+                            }
+                            stopTimer("final contraction");
+
+                            tdx++;
                         }
-                        stopTimer("computation contractPhis");
-                    }
-                    startTimer("final contraction");
-                    MKpiPhi = MDPhi*MKpiPhi*ph3d;
-                    sliceSum(MKpiPhi, buf, Tdir);
-
-                    LOG(Message) << "Updating results for (rdx,sdx,tdx,tH) = (" << rdx << "," << sdx << "," << tdx << "," << tH << ")" << std::endl;
-                    results[tdx].corr[tHi] = TensorRemove(buf[0]);
-
-                    stopTimer("final contraction");
-
-                    if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
-                    {
-                        LOG(Message) << "Updating metadata for (rdx,sdx,tdx,tH) = (" << rdx << "," << sdx << "," << tdx << "," << tH << ")" << std::endl;
-                        std::stringstream gHw;
-                        gHw << "(" << gam12 << " " << gam34 << ")";
-                        results[tdx].gammaHw         = gHw.str();
-                        results[tdx].gammaD          = DGamma;
-                        results[tdx].gammaKpi_rhorho = RhoRhoGamma;
-                        results[tdx].gammaKpi_rhophi = RhoPhiGamma;
-                        results[tdx].tD              = tD;
-                        results[tdx].tKpi            = tKpi;
                     }
                 }
             }
             rdx++;
         }
     }
+    startTimer("results io");
     LOG(Message) << "Writing results to " << par().output << std::endl;
     saveResult(par().output, "DtoKpiTree", results);
     auto &out = envGet(HadronsSerializable, getName());
     out = results;
+    stopTimer("results io");
 }
 
 END_MODULE_NAMESPACE
