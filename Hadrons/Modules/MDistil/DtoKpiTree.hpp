@@ -12,12 +12,26 @@ BEGIN_HADRONS_NAMESPACE
 
 /*************************************************************************
  *                         DtoKpiTree                                    *
- * Computes the following diagram:                                       * 
+ * Computes the following diagrams:                                       * 
  *                                                                       * 
  *                                                                       * 
  *           ______ v1   v3 ______                                       * 
  *          /      g12 x g34      \                                      * 
  *         /        v5   v4        \                                     * 
+ *        /          \      \______ M(rho3,rho4)                         * 
+ *  M(rho1,rho2)      \                                                  * 
+ *        \            \__________                                       * 
+ *         \                      \                                      * 
+ *          \______________________ M(phi2,rho5)                         * 
+ *                                                                       * 
+ *                                                                       * 
+ *  D(t=tD)           H_W(t)           tKpi                              * 
+ *                                                                       * 
+ *                                                                       * 
+ *                                                                       * 
+ *           ______ v1 g12  v3 ______                                    * 
+ *          /                        \                                   * 
+ *         /        v5 g34  v4        \                                  * 
  *        /          \      \______ M(rho3,rho4)                         * 
  *  M(rho1,rho2)      \                                                  * 
  *        \            \__________                                       * 
@@ -112,7 +126,7 @@ std::vector<std::string> TDtoKpiTree<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TDtoKpiTree<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName()+"_tree",getName()+"_colour"};
     
     return out;
 }
@@ -128,8 +142,10 @@ void TDtoKpiTree<FImpl>::setup(void)
     envTmp   (FermionField,    "fermion3dtmp2" ,1, gridLD);
     envTmp   (FermionField,    "fermion3dtmp3" ,1, gridLD);
     envTmp   (PropagatorField, "prop3dtmp"     ,1, gridLD);
+    envTmp   (PropagatorField, "prop3dtmp1"     ,1, gridLD);
     envTmp   (ComplexField,    "MKpiPhi"       ,1, gridLD);
     envTmp   (ComplexField,    "MDPhi"         ,1, gridLD);
+    envTmp   (ComplexField,    "MColour"       ,1, gridLD);
     envTmpLat(ComplexField,    "ph");
     envTmp   (ComplexField,    "ph3d"          ,1, gridLD);
     envTmpLat(ComplexField,    "coor");
@@ -145,7 +161,8 @@ void TDtoKpiTree<FImpl>::setup(void)
     envTmp(FermionField,    "fermionDDtmp_light" ,1, gridDD);
     envTmp(FermionField,    "fermionDDtmp_charm" ,1, gridDD);
 
-    envCreate(HadronsSerializable, getName(), 1, 0);
+    envCreate(HadronsSerializable, getName()+"_tree", 1, 0);
+    envCreate(HadronsSerializable, getName()+"_colour", 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -171,6 +188,7 @@ void TDtoKpiTree<FImpl>::execute(void)
     {
         LOG(Message) << "Using " << par().momsKpi.size() << " possible K-pi momenta provided." << std::endl;
     }
+    LOG(Message) << "WARNING: Assuming ordering s + ns*(l + nl*t) in DilutedNoise.hpp. This code will break when this changes!" << std::endl;
 
     for (auto dmom : par().momsD)
     {
@@ -276,7 +294,6 @@ void TDtoKpiTree<FImpl>::execute(void)
     {
         std::string mfPath = par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + RhoRhoGamma + "_p" + kmom + ".h5";   
         TimerArray timer1;
-        // try_emplace RhoRhoMesonMFs to stop redundant loading b/w here and D meson
         auto it = RhoRhoMesonMFs.find(RhoRhoGamma+"_p"+kmom);
         if (it == RhoRhoMesonMFs.end()) 
         {
@@ -287,12 +304,6 @@ void TDtoKpiTree<FImpl>::execute(void)
         {
             LOG(Message) << "already read " << mfPath << std::endl;
         }
-
-        // read in later to not have OOM
-        // mfPath = par().RhoPhiStem + "rho-phi." + std::to_string(vm().getTrajectory()) + "/" + RhoPhiGamma + "_p" + kmom + ".h5";   
-        // LOG(Message) << "reading " << mfPath << std::endl;
-        // TimerArray timer2;
-        // RhoPhiMesonMFs.try_emplace(RhoPhiGamma+"_p"+kmom, ContractionDistilMesonField<ComplexD,ComplexF>(mfPath, nT, timer2));
     }
     stopTimer("MesonField IO");
 
@@ -317,22 +328,50 @@ void TDtoKpiTree<FImpl>::execute(void)
     }
 
     std::vector<unsigned int> tDs = par().tDs;
+    for(auto tD : tDs)
+    {
+        if(tD>=nT)
+        {
+            HADRONS_ERROR(Range, "all tDs must be smaller than nT");
+        }
+    }
 
     std::vector<GammaPair> gammas = strToVec<GammaPair>(par().gammas);
 
-    std::vector<Result> results;
+    std::vector<Result> Tresults, Cresults;
     int resultSize = gammas.size()*tDs.size()*tKpis.size()*nMoms;
-    results.resize(resultSize);
-    LOG(Message) << "Resized results object to gammas (" << gammas.size() << ") * tDs (" << tDs.size() 
-                 << ") * tKpis (" << tKpis.size() << ") * nMoms (" << nMoms << ") = " << resultSize << std::endl;
+    Tresults.resize(resultSize);
+    Cresults.resize(resultSize);
+    LOG(Message) << "Results objects have gammas (" << gammas.size() << ") * tDs (" << tDs.size() 
+                 << ") * tKpis (" << tKpis.size() << ") * nMoms (" << nMoms << ") = " << resultSize << " size" << std::endl;
+    int counter = 0;
+    for (unsigned int tDi = 0; tDi < tDs.size(); tDi++)
+    {
+        unsigned int tD = tDs[tDi];
+        for (unsigned int tKpii = 0; tKpii < tKpis.size(); tKpii++)
+        {
+            unsigned int tKpi = tKpis[tKpii];
+            unsigned int size = (tKpi - tD + nT)%nT - 1;
+            for (unsigned int i = 0; i < nMoms*gammas.size(); i++)
+            {
+                unsigned int ridx = counter*nMoms*gammas.size() + i;
+                //LOG(Message) << "Resizing (counter,ridx) = (" << counter << "," << ridx << ")" << std::endl;
+                Tresults[ridx].corr.resize(size);
+                Cresults[ridx].corr.resize(size);
+            }
+            counter++;
+        }
+    }
     
     // Temporary objects
     envGetTmp(FermionField,    fermion3dtmp1);
     envGetTmp(FermionField,    fermion3dtmp2);
     envGetTmp(FermionField,    fermion3dtmp3);
     envGetTmp(PropagatorField, prop3dtmp);
+    envGetTmp(PropagatorField, prop3dtmp1);
     envGetTmp(ComplexField,    MKpiPhi);
     envGetTmp(ComplexField,    MDPhi);
+    envGetTmp(ComplexField,    MColour);
 
     // momentum phase e^{ipx} for Hw
     Complex           i(0.0,1.0);
@@ -352,7 +391,6 @@ void TDtoKpiTree<FImpl>::execute(void)
     envGetTmp(FermionField,    fermionDDtmp_light);
     envGetTmp(FermionField,    fermionDDtmp_charm);
 
-    unsigned int rdx = 0;
     for (unsigned int tDi = 0; tDi < tDs.size(); tDi++)
     {
         unsigned int tD = tDs[tDi];
@@ -361,64 +399,79 @@ void TDtoKpiTree<FImpl>::execute(void)
         {
             HADRONS_ERROR(Range, "tD must be smaller than nT");
         }
-        // determine timeslices tH which are between tD and tKpi (shorter distance)
-        for(auto tKpi : tKpis)
+
+        int tH;
+        std::string tFileName;
+        for (int t = 0; t < Ntlocal; t++)
         {
-            std::vector<unsigned int> tHs;
-            int tDMinusTKpi = (tD - tKpi + nT) % nT;
-            int tKpiMinusTD = (tKpi - tD + nT) % nT;
-            if(tDMinusTKpi < tKpiMinusTD)
+            tH = t + Ntfirst;
+            if (tH == tD)
             {
-                for(int iTH = 1; iTH < tDMinusTKpi; iTH++)
-                {
-                    int tH_tmp = (tKpi + iTH + nT) % nT;
-                    tHs.push_back(tH_tmp);      
-                }     
-            }
-            else
-            {
-                for(int iTH = 1; iTH < tKpiMinusTD; iTH++)
-                {
-                    int tH_tmp = (tD + iTH + nT) % nT;
-                    tHs.push_back(tH_tmp);      
-                }     
+                LOG(Message) << "Not including contact terms, skipping tD = " << tD << " and tH = " << tH << std::endl;
+                continue;
             }
 
-            for (unsigned int i = 0; i < nMoms*gammas.size(); i++)
-            {
-                unsigned int ridx = rdx*nMoms*gammas.size() + i;
-                results[ridx].corr.resize(tHs.size());
-            }
+            // 3D phase e^{ipx}
+            ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
 
-            LOG(Message) << "WARNING: Assuming ordering s + ns*(l + nl*t) in DilutedNoise.hpp. This code will break when this changes!" << std::endl;
-            int tH;
-            std::vector<TComplex> buf;
-            std::string tFileName;
+            // read perambulator
+            LOG(Message) << "Starting charm perambulator I/O for (tD,tH) = (" << tD << "," << tH << ")" << std::endl;
+            envGetTmp(FermionField,    fermionDDtmp_charm);
+            startTimer("phi_c I/O");
+            tFileName = par().vectorStemC;
+            tFileName.append("_DD");
+            tFileName.append("_tSm");
+            tFileName.append(std::to_string(tD));
+            tFileName.append("_tLoc");
+            tFileName.append(std::to_string(tH));
+            DistillationVectorsIo::readComponent(fermionDDtmp_charm, tFileName, 1, nDL, nDS, nDT, 0, vm().getTrajectory());
+            stopTimer("phi_c I/O");
 
-            for (int t = 0; t < Ntlocal; t++)
+            for(unsigned int tKpii = 0; tKpii < tKpis.size(); tKpii++)
             {
-                tH = t + Ntfirst;
-                auto it = std::find(tHs.begin(), tHs.end(), tH);
-                if (it == tHs.end())
+                unsigned int tKpi = tKpis[tKpii];
+                if (tH == tKpi)
                 {
-                    LOG(Message) << "Only computing three-point function between tD = " << tD << " and tKpi = " << tKpi << ", skipping tH = " << tH << std::endl;
+                    LOG(Message) << "Not including contact terms, skipping tKpi = " << tKpi << " and tH = " << tH << std::endl;
                     continue;
-                }   
-                LOG(Message) << "Starting perambulator I/O for (tD,tKpi,tH) = (" << tD << "," << tKpi << "," << tH << ")" << std::endl;
-                int tHi = std::distance(tHs.begin(), it);
+                }
 
-                // read perambulators
-                envGetTmp(FermionField,    fermionDDtmp_charm);
-                startTimer("phi_c I/O");
-                tFileName = par().vectorStemC;
-                tFileName.append("_DD");
-                tFileName.append("_tSm");
-                tFileName.append(std::to_string(tD));
-                tFileName.append("_tLoc");
-                tFileName.append(std::to_string(tH));
-                DistillationVectorsIo::readComponent(fermionDDtmp_charm, tFileName, 1, nDL, nDS, nDT, 0, vm().getTrajectory());
-                stopTimer("phi_c I/O");
+                std::vector<unsigned int> tHs;
+                int tDMinusTKpi = (tD - tKpi + nT) % nT;
+                int tKpiMinusTD = (tKpi - tD + nT) % nT;
+                int tHMinusTKpi = (tH - tKpi + nT) % nT;
+                int tKpiMinusTH = (tKpi - tH + nT) % nT;
+                int tHMinusTD   = (tH - tD + nT) % nT;
+                int tDMinusTH   = (tD - tH + nT) % nT;
+                //LOG(Message) << "(tD,tKpi,tH) = (" << tD << "," << tKpi << "," << tH << ")" << std::endl;
+                //LOG(Message) << "    tDMinusTKpi = " << tDMinusTKpi << std::endl;
+                //LOG(Message) << "    tKpiMinusTD = " << tKpiMinusTD << std::endl;
+                //LOG(Message) << "    tHMinusTKpi = " << tHMinusTKpi << std::endl;
+                //LOG(Message) << "    tKpiMinusTH = " << tKpiMinusTH << std::endl;
+                //LOG(Message) << "      tHMinusTD = " << tHMinusTD << std::endl;
+                //LOG(Message) << "      tDMinusTH = " << tDMinusTH << std::endl;
+                int tHi;
+                // double check indexing here
+                if ((tDMinusTKpi < tKpiMinusTD) && (tDMinusTH < tDMinusTKpi)) 
+                {
+                    tHi = tHMinusTKpi-1; 
+                    LOG(Message) << "--> computing backwards signal" << std::endl;
+                }
+                else if ((tKpiMinusTD <= tDMinusTKpi) && (tHMinusTD < tKpiMinusTD))
+                {
+                    tHi = tHMinusTD-1;
+                    LOG(Message) << "--> computing forwards signal" << std::endl;
+                }
+                else
+                {
+                    LOG(Message) << "Only computing three-point functions between tD = " << tD << " and tKpi = " << tKpi << ", skipping tH = " << tH << std::endl;
+                    continue;
+                }
 
+                std::vector<TComplex> Tbuf, Cbuf;
+
+                // read perambulator
+                LOG(Message) << "Starting light perambulator I/O for (tKpi,tH) = (" << tKpi << "," << tH << ")" << std::endl;
                 envGetTmp(FermionField,    fermionDDtmp_light);
                 startTimer("phi_l I/O");
                 tFileName = par().vectorStemL;
@@ -430,9 +483,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                 DistillationVectorsIo::readComponent(fermionDDtmp_light, tFileName, 1, nDL, nDS, nDT, 0, vm().getTrajectory());
                 stopTimer("phi_l I/O");
 
-                // 3D phase e^{ipx}
-                ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
-
+                unsigned int rdx = tDi*tKpis.size() + tKpii;
                 unsigned int tdx = rdx*nMoms*gammas.size();
                 for (unsigned int ddx = 0; ddx < Dmoms.size(); ddx++) 
                 {
@@ -460,6 +511,9 @@ void TDtoKpiTree<FImpl>::execute(void)
                             Gamma::Algebra gam12 = gammas[sdx].first, gam34 = gammas[sdx].second;
                             Gamma g12(gam12), g34(gam34);
 
+                            MKpiPhi = Zero();
+                            MDPhi   = Zero();
+                            MColour = Zero();
                             //   contract 2xphi_l with Kpi(rho,rho)
                             // & contract phi_l, phi_c, DMesonMF
                             // TODO: this needs to be smarter for colour-suppressed diagram variant
@@ -473,63 +527,114 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     startTimer("ExtractSliceLocal");
                                     ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
                                     stopTimer("ExtractSliceLocal");
-                                    startTimer("computation contractPhis");
-                                    fermion3dtmp3 = g12*fermion3dtmp2;
+                                    startTimer("computation contractPhis Tree");
+                                    fermion3dtmp3 = g34*fermion3dtmp2;
                                     fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id2);
                                     prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp2);
-                                    // this object is sum_{spin,colour,d1,d2} (DMeson[d1,d2] * vector1[d1] * gamma12 * vector2[d2]) on timeslice tH
+                                    // sum_{spin,colour,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d1,d2]) 
                                     MKpiPhi += trace(prop3dtmp);
-                                    stopTimer("computation contractPhis");
+                                    stopTimer("computation contractPhis Tree");
 
                                     startTimer("ExtractSliceLocal");
                                     ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
                                     stopTimer("ExtractSliceLocal");
-                                    startTimer("computation contractPhis");
-                                    fermion3dtmp3 = g34*fermion3dtmp1;
-                                    fermion3dtmp1 = fermion3dtmp3*RhoPhiMF(tKpi,tKpi,tD)(id1,id2)*DMesonMF(tD,tD,tD)(id1,id2);
-                                    prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp1);
-                                    MDPhi += trace(prop3dtmp);
-                                    stopTimer("computation contractPhis");
+                                    startTimer("computation contractPhis Tree");
+                                    fermion3dtmp3 = g12*fermion3dtmp1;
+                                    prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp3);
+                                    stopTimer("computation contractPhis Tree");
+                                    for (int id3=0; id3<nDL*nDS; id3++)
+                                    {
+                                        startTimer("computation contractPhis Tree");
+                                        // sum_{spin,colour,d1,d2,d3} (DMeson[d2,d3] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
+                                        MDPhi += trace(prop3dtmp*RhoPhiMF(tKpi,tKpi,tD)(id2,id3)*DMesonMF(tD,tD,tD)(id1,id3));
+                                        stopTimer("computation contractPhis Tree");
+
+                                        // sum_{spin,colour,d1,d2,d3,d4,d5} (DMF[d2,d5] * vector1[d2] * gamma12 * vector3[d1] * KMF(d1,d3) * vector4[d3] * g34 * vector5[d4] * PMF[d4,d5])
+                                        //startTimer("ExtractSliceLocal");
+                                        //ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id3, Tdir);
+                                        //stopTimer("ExtractSliceLocal");
+                                        //for (int id4=0; id4<nDL*nDS; id4++)
+                                        //{
+                                        //    startTimer("ExtractSliceLocal");
+                                        //    ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id4, Tdir);
+                                        //    stopTimer("ExtractSliceLocal");
+                                        //    startTimer("computation contractPhis Colour");
+                                        //    fermion3dtmp3 = g34*fermion3dtmp2;
+                                        //    prop3dtmp1 = prop3dtmp*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id3)*outerProduct(fermion3dtmp1,fermion3dtmp3);
+                                        //    for (int id5=0; id5<nDL*nDS; id5++)
+                                        //    {
+                                        //        MColour += trace(DMesonMF(tD,tD,tD)(id2,id5)*prop3dtmp*RhoPhiMF(tKpi,tKpi,tD)(id4,id5));
+                                        //    }
+                                        //    stopTimer("computation contractPhis Colour");
+                                        //}
+                                    }       
                                 }
                             }
-                            startTimer("final contraction");
+                            startTimer("final contraction Tree");
                             MKpiPhi = MDPhi*MKpiPhi*ph3d;
-                            sliceSum(MKpiPhi, buf, Tdir);
+                            sliceSum(MKpiPhi, Tbuf, Tdir);
 
-                            LOG(Message) << "Updating results for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
-                            results[tdx].corr[tHi] = TensorRemove(buf[0]);
+                            LOG(Message) << "Updating Tresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                            Tresults[tdx].corr[tHi] = TensorRemove(Tbuf[0]);
 
                             if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
                             {
                                 LOG(Message) << "Updating metadata for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
                                 std::stringstream gHw;
                                 gHw << "(" << gam12 << " " << gam34 << ")";
-                                results[tdx].gammaHw         = gHw.str();
-                                results[tdx].gammaD          = DGamma;
-                                results[tdx].gammaKpi_rhorho = RhoRhoGamma;
-                                results[tdx].gammaKpi_rhophi = RhoPhiGamma;
-                                results[tdx].momD            = dmom;
-                                results[tdx].momKpi_rhorho   = Kmom1;
-                                results[tdx].momKpi_rhophi   = Kmom2;
-                                results[tdx].momHw           = par().momHw;
-                                results[tdx].tD              = tD;
-                                results[tdx].tKpi            = tKpi;
+                                Tresults[tdx].gammaHw         = gHw.str();
+                                Tresults[tdx].gammaD          = DGamma;
+                                Tresults[tdx].gammaKpi_rhorho = RhoRhoGamma;
+                                Tresults[tdx].gammaKpi_rhophi = RhoPhiGamma;
+                                Tresults[tdx].momD            = dmom;
+                                Tresults[tdx].momKpi_rhorho   = Kmom1;
+                                Tresults[tdx].momKpi_rhophi   = Kmom2;
+                                Tresults[tdx].momHw           = par().momHw;
+                                Tresults[tdx].tD              = tD;
+                                Tresults[tdx].tKpi            = tKpi;
                             }
-                            stopTimer("final contraction");
+                            stopTimer("final contraction Tree");
+
+                            //startTimer("final contraction Colour");
+                            //MColour = MColour*ph3d;
+                            //sliceSum(MColour, Cbuf, Tdir);
+
+                            //LOG(Message) << "Updating Cresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                            //Cresults[tdx].corr[tHi] = TensorRemove(Cbuf[0]);
+
+                            //if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
+                            //{
+                            //    LOG(Message) << "Updating metadata for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                            //    std::stringstream gHw;
+                            //    gHw << "(" << gam12 << " " << gam34 << ")";
+                            //    Cresults[tdx].gammaHw         = gHw.str();
+                            //    Cresults[tdx].gammaD          = DGamma;
+                            //    Cresults[tdx].gammaKpi_rhorho = RhoRhoGamma;
+                            //    Cresults[tdx].gammaKpi_rhophi = RhoPhiGamma;
+                            //    Cresults[tdx].momD            = dmom;
+                            //    Cresults[tdx].momKpi_rhorho   = Kmom1;
+                            //    Cresults[tdx].momKpi_rhophi   = Kmom2;
+                            //    Cresults[tdx].momHw           = par().momHw;
+                            //    Cresults[tdx].tD              = tD;
+                            //    Cresults[tdx].tKpi            = tKpi;
+                            //}
+                            //stopTimer("final contraction Colour");
 
                             tdx++;
                         }
                     }
                 }
             }
-            rdx++;
         }
     }
     startTimer("results io");
     LOG(Message) << "Writing results to " << par().output << std::endl;
-    saveResult(par().output, "DtoKpiTree", results);
-    auto &out = envGet(HadronsSerializable, getName());
-    out = results;
+    saveResult(par().output+"_tree", "DtoKpiTree", Tresults);
+    auto &Tout = envGet(HadronsSerializable, getName()+"_tree");
+    Tout = Tresults;
+    //saveResult(par().output+"_colour", "DtoKpiColour", Cresults);
+    //auto &Cout = envGet(HadronsSerializable, getName()+"_colour");
+    //Cout = Cresults;
     stopTimer("results io");
 }
 
