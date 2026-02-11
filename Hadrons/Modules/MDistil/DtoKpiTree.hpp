@@ -209,23 +209,11 @@ void TDtoKpiTree<FImpl>::execute(void)
                         if (Kpi1P2 <= 4)
                         {
                             std::string Kpimom1 = std::to_string(i) + "_" + std::to_string(j) + "_" + std::to_string(k);
-                            //for (int l = -2; l <= 2; l++)
-                            //{
-                            //    for (int m = -2; m <= 2; m++)
-                            //    {
-                            //        for (int n = -2; n <= 2; n++)
-                            //        {
                             int o(dmomI[0]-i), p(dmomI[1]-j), q(dmomI[2]-k);
                             int Kpi2P2 = o*o + p*p + q*q;
                             if ((std::abs(o) <= 2) && (std::abs(p) <= 2) && (std::abs(q) <= 2) && (Kpi2P2 <= 4))
                             {
-                                        //int Kpi2P2 = l*l + m*m + n*n;
-                                        //if (Kpi2P2 <= 4)
-                                        //{
                                 std::string Kpimom2 = std::to_string(o) + "_" + std::to_string(p) + "_" + std::to_string(q);
-                                            //int o(i+l), p(j+m), q(k+n);
-                                            //if (dmomI[0] == o && dmomI[1] == p && dmomI[2] == q)
-                                            //{
                                 std::vector<std::string> Kpis = {Kpimom1, Kpimom2};
                                 Kpims.push_back(Kpis);
                                 if (std::find(Kpilist.begin(), Kpilist.end(), Kpimom1) == Kpilist.end())
@@ -506,6 +494,12 @@ void TDtoKpiTree<FImpl>::execute(void)
                         ContractionDistilMesonField<ComplexD,ComplexF> RhoPhiMF(mfPath, nT, timer2, tDtKpi);
                         stopTimer("MesonField IO");
 
+                        // pre-contract distillation index id3 between two MFs
+                        // TODO: check if is this GPU accelerated..?
+                        startTimer("MF mult");
+                        DistilMesonFieldMatrix<ComplexD> MFmult;
+                        A2AContraction::mul(MFmult, RhoPhiMF(tKpi,tKpi,tD), DMesonMF(tD,tD,tD));
+                        stopTimer("MF mult");
                         for (unsigned int sdx = 0; sdx < gammas.size(); sdx++)
                         {
                             Gamma::Algebra gam12 = gammas[sdx].first, gam34 = gammas[sdx].second;
@@ -529,9 +523,9 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     stopTimer("ExtractSliceLocal");
                                     startTimer("computation contractPhis Tree");
                                     fermion3dtmp3 = g34*fermion3dtmp2;
-                                    fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id2);
+                                    fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id2,id1);
                                     prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp2);
-                                    // sum_{spin,colour,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d1,d2]) 
+                                    // sum_{spin,colour,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d2,d1]) 
                                     MKpiPhi += trace(prop3dtmp);
                                     stopTimer("computation contractPhis Tree");
 
@@ -541,37 +535,31 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     startTimer("computation contractPhis Tree");
                                     fermion3dtmp3 = g12*fermion3dtmp1;
                                     prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp3);
+                                    // sum_{spin,colour,d1,d2,d3} (DMeson[d3,d2] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
+                                    MDPhi += trace(prop3dtmp*MFmult(id1,id2));
                                     stopTimer("computation contractPhis Tree");
-                                    for (int id3=0; id3<nDL*nDS; id3++)
-                                    {
-                                        startTimer("computation contractPhis Tree");
-                                        // sum_{spin,colour,d1,d2,d3} (DMeson[d2,d3] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
-                                        MDPhi += trace(prop3dtmp*RhoPhiMF(tKpi,tKpi,tD)(id2,id3)*DMesonMF(tD,tD,tD)(id1,id3));
-                                        stopTimer("computation contractPhis Tree");
-
-                                        // sum_{spin,colour,d1,d2,d3,d4,d5} (DMF[d2,d5] * vector1[d2] * gamma12 * vector3[d1] * KMF(d1,d3) * vector4[d3] * g34 * vector5[d4] * PMF[d4,d5])
-                                        //startTimer("ExtractSliceLocal");
-                                        //ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id3, Tdir);
-                                        //stopTimer("ExtractSliceLocal");
-                                        //for (int id4=0; id4<nDL*nDS; id4++)
-                                        //{
-                                        //    startTimer("ExtractSliceLocal");
-                                        //    ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id4, Tdir);
-                                        //    stopTimer("ExtractSliceLocal");
-                                        //    startTimer("computation contractPhis Colour");
-                                        //    fermion3dtmp3 = g34*fermion3dtmp2;
-                                        //    prop3dtmp1 = prop3dtmp*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id3)*outerProduct(fermion3dtmp1,fermion3dtmp3);
-                                        //    for (int id5=0; id5<nDL*nDS; id5++)
-                                        //    {
-                                        //        MColour += trace(DMesonMF(tD,tD,tD)(id2,id5)*prop3dtmp*RhoPhiMF(tKpi,tKpi,tD)(id4,id5));
-                                        //    }
-                                        //    stopTimer("computation contractPhis Colour");
-                                        //}
-                                    }       
+                                    //for (int id3=0; id3<nDL*nDS; id3++)
+                                    //{
+                                    //    // sum_{spin,colour,d1,d2,d3,d4,d5} (DMF[d5,d2] * vector1[d2] * gamma12 * vector3[d1] * KMF(d1,d3) * vector4[d3] * g34 * vector5[d4] * PMF[d4,d5])
+                                    //    startTimer("ExtractSliceLocal");
+                                    //    ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id3, Tdir);
+                                    //    stopTimer("ExtractSliceLocal");
+                                    //    for (int id4=0; id4<nDL*nDS; id4++)
+                                    //    {
+                                    //        startTimer("ExtractSliceLocal");
+                                    //        ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id4, Tdir);
+                                    //        stopTimer("ExtractSliceLocal");
+                                    //        startTimer("computation contractPhis Colour");
+                                    //        fermion3dtmp3 = g34*fermion3dtmp2;
+                                    //        prop3dtmp1 = prop3dtmp*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id3)*outerProduct(fermion3dtmp1,fermion3dtmp3);
+                                    //        MColour += trace(prop3dtmp1*MFmult(id4,id2));
+                                    //        stopTimer("computation contractPhis Colour");
+                                    //    }
+                                    //}       
                                 }
                             }
                             startTimer("final contraction Tree");
-                            MKpiPhi = MDPhi*MKpiPhi*ph3d;
+                            MKpiPhi = MDPhi*ph3d*MKpiPhi;
                             sliceSum(MKpiPhi, Tbuf, Tdir);
 
                             LOG(Message) << "Updating Tresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
