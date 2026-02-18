@@ -113,16 +113,16 @@ void TDMeson4QuarkField<FImpl>::setup(void)
     GridCartesian * gridHD = envGetGrid(FermionField);
     GridCartesian * gridLD = envGetSliceGrid(FermionField,gridHD->Nd() -1);
     
-    envTmpLat(FermionField,    "fermion4dtmp");
-    envTmp   (FermionField,    "fermion3dtmp1" ,1, gridLD);
-    envTmp   (FermionField,    "fermion3dtmp2" ,1, gridLD);
-    envTmp   (FermionField,    "fermion3dtmp3" ,1, gridLD);
-    envTmp   (PropagatorField, "prop3dtmp"     ,1, gridLD);
-    envTmp   (ComplexField,    "MPhiPhi"       ,1, gridLD);
-    envTmp   (ComplexField,    "cplx3dtmp"     ,1, gridLD);
-    envTmpLat(ComplexField,    "ph");
-    envTmp   (ComplexField,    "ph3d"          ,1, gridLD);
-    envTmpLat(ComplexField,    "coor");
+    envTmpLat(FermionField,      "fermion4dtmp");
+    envTmp   (FermionField,      "fermion3dtmp1" ,1, gridLD);
+    envTmp   (FermionField,      "fermion3dtmp2" ,1, gridLD);
+    envTmp   (FermionField,      "fermion3dtmp3" ,1, gridLD);
+    envTmp   (PropagatorField,   "prop3dtmp"     ,1, gridLD);
+    envTmp   (ColourMatrixField, "MPhiPhi"       ,1, gridLD);
+    envTmp   (ComplexField,      "cplx3dtmp"     ,1, gridLD);
+    envTmpLat(ComplexField,      "ph");
+    envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
+    envTmpLat(ComplexField,      "coor");
 
 
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
@@ -133,8 +133,10 @@ void TDMeson4QuarkField<FImpl>::setup(void)
     // maybe only initialise this optionally if batchIO == true ?
     envTmp    (std::vector<FermionField>, "vec_charm", 1, nDL * nDS, gridLD);
     
-    envTmp(Vector<HADRONS_DISTIL_IO_TYPE>, "block_buf", 1, nDL * nDS * nDL * nDS);
-    envTmp(Vector<HADRONS_DISTIL_TYPE>,    "cache_buf", 1, nDL * nDS * nDL * nDS);
+    envTmp(Vector<HADRONS_DISTIL_IO_TYPE>, "Sblock_buf", 1, nDL * nDS * nDL * nDS);
+    envTmp(Vector<HADRONS_DISTIL_TYPE>,    "Scache_buf", 1, nDL * nDS * nDL * nDS);
+    envTmp(Vector<HADRONS_DISTIL_IO_TYPE>, "Rblock_buf", 1, nDL * nDS * nDL * nDS);
+    envTmp(Vector<HADRONS_DISTIL_TYPE>,    "Rcache_buf", 1, nDL * nDS * nDL * nDS);
 
     Grid::Coordinate coor  = gridHD->GlobalDimensions();
     coor[3] = nDL * nDS;
@@ -157,16 +159,21 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     const int Ntlocal{gridHD->LocalDimensions()[Tdir]};
     const int Ntfirst{gridHD->LocalStarts()[Tdir]};
     int nT=env().getDim(Tdir);
+    unsigned int tD = par().tD; 
     
     // block and cache to store the output in
-    envGetTmp(Vector<HADRONS_DISTIL_IO_TYPE>, block_buf);
-    envGetTmp(Vector<HADRONS_DISTIL_TYPE>, cache_buf);
+    envGetTmp(Vector<HADRONS_DISTIL_IO_TYPE>, Sblock_buf);
+    envGetTmp(Vector<HADRONS_DISTIL_TYPE>, Scache_buf);
+    envGetTmp(Vector<HADRONS_DISTIL_IO_TYPE>, Rblock_buf);
+    envGetTmp(Vector<HADRONS_DISTIL_TYPE>, Rcache_buf);
     
+    LOG(Message) << "Loaded block and cache" << std::endl;
     // read input D-meson field
     std::string mfPath = par().DMesonStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + par().DMesonField;   
     LOG(Message) << "reading " << mfPath << std::endl;
     TimerArray timer;
-    ContractionDistilMesonField<ComplexD,ComplexF> DMeson(mfPath,par().DMesSize, timer);
+    std::vector<std::vector<int>> Dvec = {{(int)tD, (int)tD}};
+    ContractionDistilMesonField<ComplexD,ComplexF> DMeson(mfPath, nT, timer, Dvec);
      
     // noise class -- assert they are identical and an "exact distillation" policy
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
@@ -179,7 +186,6 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     int nDS = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::s);        
     int nDT = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::t);        
     // other input parameters
-    unsigned int tD = par().tD; 
     std::vector<unsigned int> tKpi = par().tKpi; 
     if(tD>=nT)
     {
@@ -210,13 +216,13 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     ph = exp((Real)(2*M_PI)*i*ph);
 
     // Temporary objects
-    envGetTmp(FermionField,    fermion4dtmp);
-    envGetTmp(FermionField,    fermion3dtmp1);
-    envGetTmp(FermionField,    fermion3dtmp2);
-    envGetTmp(FermionField,    fermion3dtmp3);
-    envGetTmp(PropagatorField, prop3dtmp);
-    envGetTmp(ComplexField,    MPhiPhi);
-    envGetTmp(ComplexField,    cplx3dtmp);
+    envGetTmp(FermionField,      fermion4dtmp);
+    envGetTmp(FermionField,      fermion3dtmp1);
+    envGetTmp(FermionField,      fermion3dtmp2);
+    envGetTmp(FermionField,      fermion3dtmp3);
+    envGetTmp(PropagatorField,   prop3dtmp);
+    envGetTmp(ColourMatrixField, MPhiPhi);
+    envGetTmp(ComplexField,      cplx3dtmp);
     
     int fewerTH = par().fewerTH;
     if(fewerTH && Ntlocal < nT)
@@ -255,7 +261,8 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     //md.SpinDilutionRight = index1[DistillationNoise<FImpl>::Index::s];
    
 
-    std::vector<DistilMatrixIo<HADRONS_DISTIL_IO_TYPE>> matrix_io(tKpi.size());
+    std::vector<DistilMatrixIo<HADRONS_DISTIL_IO_TYPE>> matrix_ioS(tKpi.size());
+    std::vector<DistilMatrixIo<HADRONS_DISTIL_IO_TYPE>> matrix_ioR(tKpi.size());
     startTimer("file creation");
     // file name of output
 
@@ -264,23 +271,29 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     int iKpi=0;
     for(auto tKp : tKpi)
     {
-        std::string outPath = par().outPath; 
+        std::string outPathS = par().outPath, outPathR = par().outPath; 
         std::stringstream ss;
         ss << DGamma << "__" << par().gamma12 << "_" << par().gamma34 << "_p";
         for (unsigned int mu = 0; mu < p.size(); ++mu)
                 ss << p[mu] << ((mu == p.size() - 1) ? "" : "_");
-        ss << ".h5";   
-        outPath += "/D-Hw.tD" + std::to_string(tD) +".tKpi"+ std::to_string(tKp) + "." + std::to_string(vm().getTrajectory()) + "/" + ss.str();
+        //ss << ".h5";   
+        std::string singletstr = ss.str()+"_singlet.h5", rearrstr = ss.str()+"_rearranged.h5";
+        outPathS += "/D-Hw.tD" + std::to_string(tD) +".tKpi"+ std::to_string(tKp) + "." + std::to_string(vm().getTrajectory()) + "/" + singletstr;
+        outPathR += "/D-Hw.tD" + std::to_string(tD) +".tKpi"+ std::to_string(tKp) + "." + std::to_string(vm().getTrajectory()) + "/" + rearrstr;
         
-        makeFileDir(outPath, gridHD);
+        makeFileDir(outPathS, gridHD);
+        makeFileDir(outPathR, gridHD);
         unsigned int myRank = gridHD->ThisRank(); 
-        DistilMatrixIo<HADRONS_DISTIL_IO_TYPE> mIO(outPath, DISTIL_MATRIX_NAME, nT, nDL * nDS, nDL * nDS);
+        DistilMatrixIo<HADRONS_DISTIL_IO_TYPE> mIOS(outPathS, DISTIL_MATRIX_NAME, nT, nDL * nDS, nDL * nDS);
+        DistilMatrixIo<HADRONS_DISTIL_IO_TYPE> mIOR(outPathR, DISTIL_MATRIX_NAME, nT, nDL * nDS, nDL * nDS);
         if(myRank==0)
         {
-            mIO.initFile(md);
+            mIOS.initFile(md);
+            mIOR.initFile(md);
         }
         gridHD->Barrier();
-        matrix_io[iKpi] = mIO;
+        matrix_ioS[iKpi] = mIOS;
+        matrix_ioR[iKpi] = mIOR;
         iKpi++;
     }
     stopTimer("file creation");
@@ -324,7 +337,7 @@ void TDMeson4QuarkField<FImpl>::execute(void)
     // variables used in the loop structure
     int dk1,ds1,dk2,ds2,dSolve1,dSolve2,tH;
     std::array<unsigned int, 3> index1,index2;
-    std::vector<TComplex>  buf;
+    std::vector<TComplex>  Sbuf, Rbuf;
     std::string tFileName;
 
     const uint i_rank =  gridHD->ThisRank();
@@ -427,8 +440,8 @@ void TDMeson4QuarkField<FImpl>::execute(void)
                 fermion3dtmp3 = g12*fermion3dtmp2;
                 fermion3dtmp2 = DMeson(tD,tD,tD)(id1,id2)*fermion3dtmp3;
                 prop3dtmp = outerProduct(fermion3dtmp1,fermion3dtmp2);
-                // this object is sum_{spin,colour,d1,d2} (DMeson[d1,d2] * vector1[d1] * gamma12 * vector2[d2]) on timeslice tH
-                MPhiPhi += trace(prop3dtmp);
+                // this object is sum_{spin,d1,d2} (DMeson[d1,d2] * vector1[d1] * gamma12 * vector2[d2]) on timeslice tH
+                MPhiPhi += traceSpin(prop3dtmp);
             }
             stopTimer("computation MPhiPhi");
         }
@@ -482,7 +495,8 @@ void TDMeson4QuarkField<FImpl>::execute(void)
             tr[ M(rho,rho; tD,tD,tD) * M(phi,phi; tD,tD,tD) ]
             *************************************************/
             startTimer("computation D-4quark");
-            DistilMatrixSetIo<ComplexF> block(block_buf.data(), 1 , 1, nDL * nDS, nDL * nDS);
+            DistilMatrixSetIo<ComplexF> Sblock(Sblock_buf.data(), 1 , 1, nDL * nDS, nDL * nDS);
+            DistilMatrixSetIo<ComplexF> Rblock(Rblock_buf.data(), 1 , 1, nDL * nDS, nDL * nDS);
             for(int id1=0; id1<nDL * nDS; id1++)
             {
                 //fermion3dtmp1 = vec_light[id1];
@@ -490,22 +504,32 @@ void TDMeson4QuarkField<FImpl>::execute(void)
                 for(int id2=0; id2<nDL * nDS; id2++)
                 {
                     // no caching for the moment - but keep this here in case anyone wants to optimise this code at some stage
-                    DistilMatrixSetCache<ComplexD> cache(cache_buf.data(), 1, 1, 1, 1, 1);
+                    DistilMatrixSetCache<ComplexD> Scache(Scache_buf.data(), 1, 1, 1, 1, 1);
+                    DistilMatrixSetCache<ComplexD> Rcache(Rcache_buf.data(), 1, 1, 1, 1, 1);
                     //fermion3dtmp3 = g34*vec_light[id2];          
                     ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light,0,id2,Tdir);
                     fermion3dtmp3 = g34*fermion3dtmp2;
                     fermion3dtmp2 = fermion3dtmp3;
                     prop3dtmp = outerProduct(fermion3dtmp1,fermion3dtmp2);
-                    cplx3dtmp = trace(prop3dtmp)*MPhiPhi*ph3d;
-                    sliceSum(cplx3dtmp,buf,Tdir);                
-                    cache(0,0,0,0,0)=TensorRemove(buf[0]);
-                    block(0,0,id1,id2) = cache(0,0,0,0,0);                
+
+                    // colour-singlet -> two colour traces
+                    cplx3dtmp = trace(prop3dtmp)*traceColour(MPhiPhi)*ph3d;
+                    sliceSum(cplx3dtmp,Sbuf,Tdir);
+                    Scache(0,0,0,0,0)=TensorRemove(Sbuf[0]);
+                    Sblock(0,0,id1,id2) = Scache(0,0,0,0,0);                
+
+                    // colour-rearranged -> one colour trace
+                    cplx3dtmp = traceColour(traceSpin(prop3dtmp)*MPhiPhi)*ph3d;
+                    sliceSum(cplx3dtmp,Rbuf,Tdir);                
+                    Rcache(0,0,0,0,0)=TensorRemove(Rbuf[0]);
+                    Rblock(0,0,id1,id2) = Rcache(0,0,0,0,0);                
                 }
             }
             stopTimer("computation D-4quark");
             startTimer("serial write I/O");
             LOG(Message) << "Starting serial IO for tH = " << tH << std::endl;
-            DistilMatrixSetTimeSliceIo<ComplexF> block_relative(block_buf.data(), 1, nDL * nDS, nDL * nDS);
+            DistilMatrixSetTimeSliceIo<ComplexF> Sblock_relative(Sblock_buf.data(), 1, nDL * nDS, nDL * nDS);
+            DistilMatrixSetTimeSliceIo<ComplexF> Rblock_relative(Rblock_buf.data(), 1, nDL * nDS, nDL * nDS);
             std::string dataset_name = std::to_string(tKp)+"-"+std::to_string(tKp);
             gridHD->Barrier();
             for(int iIO=0; iIO<N_ranks; iIO++)
@@ -513,7 +537,8 @@ void TDMeson4QuarkField<FImpl>::execute(void)
                 if(iIO==i_rank)
                 {
                     LOG(Message) << "Writing from rank " << i_rank << std::endl;
-                    matrix_io[iKpi].saveBlock(block_relative, 0, 0, 0, dataset_name, 0, nDL * nDS, std::to_string(tH));
+                    matrix_ioS[iKpi].saveBlock(Sblock_relative, 0, 0, 0, dataset_name, 0, nDL * nDS, std::to_string(tH));
+                    matrix_ioR[iKpi].saveBlock(Rblock_relative, 0, 0, 0, dataset_name, 0, nDL * nDS, std::to_string(tH));
                 }
                 gridHD->Barrier();
             }

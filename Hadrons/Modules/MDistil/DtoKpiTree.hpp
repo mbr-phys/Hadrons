@@ -12,7 +12,7 @@ BEGIN_HADRONS_NAMESPACE
 
 /*************************************************************************
  *                         DtoKpiTree                                    *
- * Computes the following diagrams:                                       * 
+ * Computes the following diagram:                                       * 
  *                                                                       * 
  *                                                                       * 
  *           ______ v1   v3 ______                                       * 
@@ -27,20 +27,10 @@ BEGIN_HADRONS_NAMESPACE
  *                                                                       * 
  *  D(t=tD)           H_W(t)           tKpi                              * 
  *                                                                       * 
- *                                                                       * 
- *                                                                       * 
- *           ______ v1 g12  v3 ______                                    * 
- *          /                        \                                   * 
- *         /        v5 g34  v4        \                                  * 
- *        /          \      \______ M(rho3,rho4)                         * 
- *  M(rho1,rho2)      \                                                  * 
- *        \            \__________                                       * 
- *         \                      \                                      * 
- *          \______________________ M(phi2,rho5)                         * 
- *                                                                       * 
- *                                                                       * 
- *  D(t=tD)           H_W(t)           tKpi                              * 
- *                                                                       * 
+ *  Sresults : colour singlet bilinears in Hamiltonian                   *
+ *             -> two colour traces                                      *
+ *  Rresults : colour rearranged bilinears in Hamiltonian                *
+ *             -> one colour trace                                       *
  *                                                                       * 
  *************************************************************************/
 BEGIN_MODULE_NAMESPACE(MDistil)
@@ -138,17 +128,17 @@ void TDtoKpiTree<FImpl>::setup(void)
     GridCartesian * gridHD = envGetGrid(FermionField);
     GridCartesian * gridLD = envGetSliceGrid(FermionField,gridHD->Nd() -1);
     
-    envTmp   (FermionField,    "fermion3dtmp1" ,1, gridLD);
-    envTmp   (FermionField,    "fermion3dtmp2" ,1, gridLD);
-    envTmp   (FermionField,    "fermion3dtmp3" ,1, gridLD);
-    envTmp   (PropagatorField, "prop3dtmp"     ,1, gridLD);
-    envTmp   (PropagatorField, "prop3dtmp1"     ,1, gridLD);
-    envTmp   (ComplexField,    "MKpiPhi"       ,1, gridLD);
-    envTmp   (ComplexField,    "MDPhi"         ,1, gridLD);
-    envTmp   (ComplexField,    "MColour"       ,1, gridLD);
-    envTmpLat(ComplexField,    "ph");
-    envTmp   (ComplexField,    "ph3d"          ,1, gridLD);
-    envTmpLat(ComplexField,    "coor");
+    envTmp   (FermionField,      "fermion3dtmp1" ,1, gridLD);
+    envTmp   (FermionField,      "fermion3dtmp2" ,1, gridLD);
+    envTmp   (FermionField,      "fermion3dtmp3" ,1, gridLD);
+    envTmp   (PropagatorField,   "prop3dtmp"     ,1, gridLD);
+    envTmp   (PropagatorField,   "prop3dtmp1"     ,1, gridLD);
+    envTmp   (ColourMatrixField, "MKpiPhi"       ,1, gridLD);
+    envTmp   (ColourMatrixField, "MDPhi"         ,1, gridLD);
+    envTmp   (ComplexField,      "MColour"       ,1, gridLD);
+    envTmpLat(ComplexField,      "ph");
+    envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
+    envTmpLat(ComplexField,      "coor");
 
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
     int nDL = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::l);        
@@ -161,8 +151,8 @@ void TDtoKpiTree<FImpl>::setup(void)
     envTmp(FermionField,    "fermionDDtmp_light" ,1, gridDD);
     envTmp(FermionField,    "fermionDDtmp_charm" ,1, gridDD);
 
-    envCreate(HadronsSerializable, getName()+"_tree", 1, 0);
-    envCreate(HadronsSerializable, getName()+"_colour", 1, 0);
+    envCreate(HadronsSerializable, getName()+"_singlet", 1, 0);
+    envCreate(HadronsSerializable, getName()+"_rearranged", 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -326,10 +316,10 @@ void TDtoKpiTree<FImpl>::execute(void)
 
     std::vector<GammaPair> gammas = strToVec<GammaPair>(par().gammas);
 
-    std::vector<Result> Tresults, Cresults;
+    std::vector<Result> Sresults, Rresults;
     int resultSize = gammas.size()*tDs.size()*tKpis.size()*nMoms;
-    Tresults.resize(resultSize);
-    Cresults.resize(resultSize);
+    Sresults.resize(resultSize);
+    Rresults.resize(resultSize);
     LOG(Message) << "Results objects have gammas (" << gammas.size() << ") * tDs (" << tDs.size() 
                  << ") * tKpis (" << tKpis.size() << ") * nMoms (" << nMoms << ") = " << resultSize << " size" << std::endl;
     int counter = 0;
@@ -344,22 +334,22 @@ void TDtoKpiTree<FImpl>::execute(void)
             {
                 unsigned int ridx = counter*nMoms*gammas.size() + i;
                 //LOG(Message) << "Resizing (counter,ridx) = (" << counter << "," << ridx << ")" << std::endl;
-                Tresults[ridx].corr.resize(size);
-                Cresults[ridx].corr.resize(size);
+                Sresults[ridx].corr.resize(size);
+                Rresults[ridx].corr.resize(size);
             }
             counter++;
         }
     }
     
     // Temporary objects
-    envGetTmp(FermionField,    fermion3dtmp1);
-    envGetTmp(FermionField,    fermion3dtmp2);
-    envGetTmp(FermionField,    fermion3dtmp3);
-    envGetTmp(PropagatorField, prop3dtmp);
-    envGetTmp(PropagatorField, prop3dtmp1);
-    envGetTmp(ComplexField,    MKpiPhi);
-    envGetTmp(ComplexField,    MDPhi);
-    envGetTmp(ComplexField,    MColour);
+    envGetTmp(FermionField,       fermion3dtmp1);
+    envGetTmp(FermionField,       fermion3dtmp2);
+    envGetTmp(FermionField,       fermion3dtmp3);
+    envGetTmp(PropagatorField,    prop3dtmp);
+    envGetTmp(PropagatorField,    prop3dtmp1);
+    envGetTmp(ColourMatrixField,  MKpiPhi);
+    envGetTmp(ColourMatrixField,  MDPhi);
+    envGetTmp(ComplexField,       MColour);
 
     // momentum phase e^{ipx} for Hw
     Complex           i(0.0,1.0);
@@ -456,7 +446,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                     continue;
                 }
 
-                std::vector<TComplex> Tbuf, Cbuf;
+                std::vector<TComplex> Sbuf, Rbuf;
 
                 // read perambulator
                 LOG(Message) << "Starting light perambulator I/O for (tKpi,tH) = (" << tKpi << "," << tH << ")" << std::endl;
@@ -495,7 +485,6 @@ void TDtoKpiTree<FImpl>::execute(void)
                         stopTimer("MesonField IO");
 
                         // pre-contract distillation index id3 between two MFs
-                        // TODO: check if is this GPU accelerated..?
                         startTimer("MF mult");
                         DistilMesonFieldMatrix<ComplexD> MFmult;
                         A2AContraction::mul(MFmult, RhoPhiMF(tKpi,tKpi,tD), DMesonMF(tD,tD,tD));
@@ -510,7 +499,6 @@ void TDtoKpiTree<FImpl>::execute(void)
                             MColour = Zero();
                             //   contract 2xphi_l with Kpi(rho,rho)
                             // & contract phi_l, phi_c, DMesonMF
-                            // TODO: this needs to be smarter for colour-suppressed diagram variant
                             for (int id1=0; id1<nDL*nDS; id1++)
                             {
                                 startTimer("ExtractSliceLocal");
@@ -525,8 +513,8 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     fermion3dtmp3 = g34*fermion3dtmp2;
                                     fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id2,id1);
                                     prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp2);
-                                    // sum_{spin,colour,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d2,d1]) 
-                                    MKpiPhi += trace(prop3dtmp);
+                                    // sum_{spin,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d2,d1]) 
+                                    MKpiPhi += traceSpin(prop3dtmp);
                                     stopTimer("computation contractPhis Tree");
 
                                     startTimer("ExtractSliceLocal");
@@ -535,78 +523,60 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     startTimer("computation contractPhis Tree");
                                     fermion3dtmp3 = g12*fermion3dtmp1;
                                     prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp3);
-                                    // sum_{spin,colour,d1,d2,d3} (DMeson[d3,d2] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
-                                    MDPhi += trace(prop3dtmp*MFmult(id1,id2));
+                                    // sum_{spin,d1,d2,d3} (DMeson[d3,d2] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
+                                    MDPhi += traceSpin(prop3dtmp*MFmult(id1,id2));
                                     stopTimer("computation contractPhis Tree");
-                                    //for (int id3=0; id3<nDL*nDS; id3++)
-                                    //{
-                                    //    // sum_{spin,colour,d1,d2,d3,d4,d5} (DMF[d5,d2] * vector1[d2] * gamma12 * vector3[d1] * KMF(d1,d3) * vector4[d3] * g34 * vector5[d4] * PMF[d4,d5])
-                                    //    startTimer("ExtractSliceLocal");
-                                    //    ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id3, Tdir);
-                                    //    stopTimer("ExtractSliceLocal");
-                                    //    for (int id4=0; id4<nDL*nDS; id4++)
-                                    //    {
-                                    //        startTimer("ExtractSliceLocal");
-                                    //        ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id4, Tdir);
-                                    //        stopTimer("ExtractSliceLocal");
-                                    //        startTimer("computation contractPhis Colour");
-                                    //        fermion3dtmp3 = g34*fermion3dtmp2;
-                                    //        prop3dtmp1 = prop3dtmp*RhoRhoMF(tKpi,tKpi,tKpi)(id1,id3)*outerProduct(fermion3dtmp1,fermion3dtmp3);
-                                    //        MColour += trace(prop3dtmp1*MFmult(id4,id2));
-                                    //        stopTimer("computation contractPhis Colour");
-                                    //    }
-                                    //}       
                                 }
                             }
-                            startTimer("final contraction Tree");
-                            MKpiPhi = MDPhi*ph3d*MKpiPhi;
-                            sliceSum(MKpiPhi, Tbuf, Tdir);
+                            startTimer("final contraction singlet");
+                            MColour = traceColour(MDPhi)*ph3d*traceColour(MKpiPhi);
+                            sliceSum(MColour, Sbuf, Tdir);
 
-                            LOG(Message) << "Updating Tresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
-                            Tresults[tdx].corr[tHi] = TensorRemove(Tbuf[0]);
+                            LOG(Message) << "Updating Sresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                            Sresults[tdx].corr[tHi] = TensorRemove(Sbuf[0]);
 
                             if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
                             {
                                 LOG(Message) << "Updating metadata for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
                                 std::stringstream gHw;
                                 gHw << "(" << gam12 << " " << gam34 << ")";
-                                Tresults[tdx].gammaHw         = gHw.str();
-                                Tresults[tdx].gammaD          = DGamma;
-                                Tresults[tdx].gammaKpi_rhorho = RhoRhoGamma;
-                                Tresults[tdx].gammaKpi_rhophi = RhoPhiGamma;
-                                Tresults[tdx].momD            = dmom;
-                                Tresults[tdx].momKpi_rhorho   = Kmom1;
-                                Tresults[tdx].momKpi_rhophi   = Kmom2;
-                                Tresults[tdx].momHw           = par().momHw;
-                                Tresults[tdx].tD              = tD;
-                                Tresults[tdx].tKpi            = tKpi;
+                                Sresults[tdx].gammaHw         = gHw.str();
+                                Sresults[tdx].gammaD          = DGamma;
+                                Sresults[tdx].gammaKpi_rhorho = RhoRhoGamma;
+                                Sresults[tdx].gammaKpi_rhophi = RhoPhiGamma;
+                                Sresults[tdx].momD            = dmom;
+                                Sresults[tdx].momKpi_rhorho   = Kmom1;
+                                Sresults[tdx].momKpi_rhophi   = Kmom2;
+                                Sresults[tdx].momHw           = par().momHw;
+                                Sresults[tdx].tD              = tD;
+                                Sresults[tdx].tKpi            = tKpi;
                             }
-                            stopTimer("final contraction Tree");
+                            stopTimer("final contraction singlet");
 
-                            //startTimer("final contraction Colour");
-                            //MColour = MColour*ph3d;
-                            //sliceSum(MColour, Cbuf, Tdir);
+                            startTimer("final contraction rearranged");
+                            MColour = traceColour(MDPhi*ph3d*MKpiPhi);
+                            sliceSum(MColour, Rbuf, Tdir);
 
-                            //LOG(Message) << "Updating Cresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
-                            //Cresults[tdx].corr[tHi] = TensorRemove(Cbuf[0]);
+                            LOG(Message) << "Updating Rresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                            Rresults[tdx].corr[tHi] = TensorRemove(Rbuf[0]);
 
-                            //if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
-                            //{
-                            //    LOG(Message) << "Updating metadata for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
-                            //    std::stringstream gHw;
-                            //    gHw << "(" << gam12 << " " << gam34 << ")";
-                            //    Cresults[tdx].gammaHw         = gHw.str();
-                            //    Cresults[tdx].gammaD          = DGamma;
-                            //    Cresults[tdx].gammaKpi_rhorho = RhoRhoGamma;
-                            //    Cresults[tdx].gammaKpi_rhophi = RhoPhiGamma;
-                            //    Cresults[tdx].momD            = dmom;
-                            //    Cresults[tdx].momKpi_rhorho   = Kmom1;
-                            //    Cresults[tdx].momKpi_rhophi   = Kmom2;
-                            //    Cresults[tdx].momHw           = par().momHw;
-                            //    Cresults[tdx].tD              = tD;
-                            //    Cresults[tdx].tKpi            = tKpi;
-                            //}
-                            //stopTimer("final contraction Colour");
+                            if (tHi == 0) // only edit metadata on first tH for each (tD,tKpi)
+                            {
+                                LOG(Message) << "Updating metadata for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
+                                std::stringstream gHw;
+                                gHw << "(" << gam12 << " " << gam34 << ")";
+                                Rresults[tdx].gammaHw         = gHw.str();
+                                Rresults[tdx].gammaD          = DGamma;
+                                Rresults[tdx].gammaKpi_rhorho = RhoRhoGamma;
+                                Rresults[tdx].gammaKpi_rhophi = RhoPhiGamma;
+                                Rresults[tdx].momD            = dmom;
+                                Rresults[tdx].momKpi_rhorho   = Kmom1;
+                                Rresults[tdx].momKpi_rhophi   = Kmom2;
+                                Rresults[tdx].momHw           = par().momHw;
+                                Rresults[tdx].tD              = tD;
+                                Rresults[tdx].tKpi            = tKpi;
+                            }
+                            stopTimer("final contraction rearranged");
 
                             tdx++;
                         }
@@ -617,12 +587,12 @@ void TDtoKpiTree<FImpl>::execute(void)
     }
     startTimer("results io");
     LOG(Message) << "Writing results to " << par().output << std::endl;
-    saveResult(par().output+"_tree", "DtoKpiTree", Tresults);
-    auto &Tout = envGet(HadronsSerializable, getName()+"_tree");
-    Tout = Tresults;
-    //saveResult(par().output+"_colour", "DtoKpiColour", Cresults);
-    //auto &Cout = envGet(HadronsSerializable, getName()+"_colour");
-    //Cout = Cresults;
+    saveResult(par().output+"_singlet", "DtoKpiTreeSinglet", Sresults);
+    auto &Sout = envGet(HadronsSerializable, getName()+"_singlet");
+    Sout = Sresults;
+    saveResult(par().output+"_rearranged", "DtoKpiTreeRearranged", Rresults);
+    auto &Rout = envGet(HadronsSerializable, getName()+"_rearranged");
+    Rout = Rresults;
     stopTimer("results io");
 }
 
