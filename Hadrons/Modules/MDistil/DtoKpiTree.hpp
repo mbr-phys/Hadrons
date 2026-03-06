@@ -41,7 +41,7 @@ class DtoKpiTreePar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(DtoKpiTreePar,
-                                    std::string,               output,       // file stem for the out file
+                                    std::string,               output,        // file stem for the out file
                                     std::string,               RhoRhoStem,    // file stem for the rho-rho MFs
                                     std::string,               RhoPhiStem,    // file stem for the rho-phi MFs
                                     std::string,               RhoRhoField,   // M(rho,rho) meson field for the Kpi
@@ -329,7 +329,7 @@ void TDtoKpiTree<FImpl>::execute(void)
         for (unsigned int tKpii = 0; tKpii < tKpis.size(); tKpii++)
         {
             unsigned int tKpi = tKpis[tKpii];
-            unsigned int size = (tKpi - tD + nT)%nT - 1;
+            unsigned int size = (tKpi-tD <= nT/2) ? ((tKpi - tD + nT)%nT - 1) : ((tD - tKpi + nT)%nT - 1);
             for (unsigned int i = 0; i < nMoms*gammas.size(); i++)
             {
                 unsigned int ridx = counter*nMoms*gammas.size() + i;
