@@ -116,7 +116,7 @@ std::vector<std::string> TDtoKpiTree<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TDtoKpiTree<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()+"_tree",getName()+"_colour"};
+    std::vector<std::string> out = {getName()+"_singlet",getName()+"_rearranged"};
     
     return out;
 }
