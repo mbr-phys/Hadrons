@@ -39,6 +39,7 @@ public:
                                     std::string,               RhoRhoStem,    // file stem for the rho-rho MFs
                                     std::string,               RhoRhoField,   // M(rho,rho) meson field for the Kpi
                                     std::string,               vectorStemC,   // charm
+                                    std::string,               vectorStemL,   // light
                                     std::string,               noisePol,      // noise policy of v1 - assert compatibility with M(rho,rho) 
                                     std::vector<unsigned int>, tSrcs,         // source times
                                     std::string,               gammas,        // list of gamma matrices to go at sink
@@ -98,7 +99,7 @@ std::vector<std::string> TUnsmearedMeson<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TUnsmearedMeson<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()};
+    std::vector<std::string> out = {getName()+"_cl",getName()+"_cc"};
     
     return out;
 }
@@ -114,10 +115,9 @@ void TUnsmearedMeson<FImpl>::setup(void)
     envTmp   (FermionField,      "fermion3dtmp2" ,1, gridLD);
     envTmp   (FermionField,      "fermion3dtmp3" ,1, gridLD);
     envTmp   (PropagatorField,   "prop3dtmp"     ,1, gridLD);
-    envTmp   (PropagatorField,   "prop3dtmp1"     ,1, gridLD);
-    envTmp   (ColourMatrixField, "MKpiPhi"       ,1, gridLD);
-    envTmp   (ColourMatrixField, "MDPhi"         ,1, gridLD);
-    envTmp   (ComplexField,      "MColour"       ,1, gridLD);
+    envTmp   (PropagatorField,   "prop3dtmp1"    ,1, gridLD);
+    envTmp   (ComplexField,      "MesPhi1"       ,1, gridLD);
+    envTmp   (ComplexField,      "MesPhi2"       ,1, gridLD);
     envTmpLat(ComplexField,      "ph");
     envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
     envTmpLat(ComplexField,      "coor");
@@ -130,9 +130,11 @@ void TUnsmearedMeson<FImpl>::setup(void)
     coor[3] = nDL * nDS;
     Grid::GridCartesian * gridDD = Grid::SpaceTimeGrid::makeFourDimGrid(coor, GridDefaultSimd(Nd,vComplex::Nsimd()), GridDefaultMpi());
 
+    envTmp(FermionField,    "fermionDDtmp_light" ,1, gridDD);
     envTmp(FermionField,    "fermionDDtmp_charm" ,1, gridDD);
 
-    envCreate(HadronsSerializable, getName(), 1, 0);
+    envCreate(HadronsSerializable, getName()+"_cl", 1, 0);
+    envCreate(HadronsSerializable, getName()+"_cc", 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -200,6 +202,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
                 momSnks.push_back(mom2);
             }
             nMoms++;
+        }
     }
 
     LOG(Message) << "WARNING: Assuming ordering s + ns*(l + nl*t) in DilutedNoise.hpp. This code will break when this changes!" << std::endl;
@@ -236,7 +239,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
     int nDS = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::s);        
     int nDT = dilNoise.dilutionSize(DistillationNoise<FImpl>::Index::t);        
 
-    std::vector<unsigned int> tDs = par().tSrcs;
+    std::vector<unsigned int> tSrcs = par().tSrcs;
     for(auto tSrc : tSrcs)
     {
         if(tSrc>=nT)
@@ -270,9 +273,8 @@ void TUnsmearedMeson<FImpl>::execute(void)
     envGetTmp(FermionField,       fermion3dtmp3);
     envGetTmp(PropagatorField,    prop3dtmp);
     envGetTmp(PropagatorField,    prop3dtmp1);
-    envGetTmp(ColourMatrixField,  MKpiPhi);
-    envGetTmp(ColourMatrixField,  MDPhi);
-    envGetTmp(ComplexField,       MColour);
+    envGetTmp(ComplexField,       MesPhi1);
+    envGetTmp(ComplexField,       MesPhi2);
 
     envGetTmp(ComplexField, coor);
     envGetTmp(ComplexField, ph);
@@ -344,6 +346,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
                 ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
 
                 ContractionDistilMesonField<ComplexD,ComplexF> &SrcMF = RhoRhoMesonMFs.at(RhoRhoGamma+"_p"+momSrc);
+                DistilMesonFieldMatrix<ComplexD> MFmult = SrcMF(tSrc,tSrc,tSrc);
 
                 for (unsigned int sdx = 0; sdx < gammas.size(); sdx++)
                 {
@@ -355,23 +358,31 @@ void TUnsmearedMeson<FImpl>::execute(void)
                     for (int id1=0; id1<nDL*nDS; id1++)
                     {
                         startTimer("ExtractSliceLocal");
-                        ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id1, Tdir);
-                        ExtractSliceLocal(fermion3dtmp3, fermionDDtmp_charm, 0, id1, Tdir);
+                        ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_charm, 0, id1, Tdir);
                         stopTimer("ExtractSliceLocal");
                         for (int id2=0; id2<nDL*nDS; id2++)
                         {
+
+                            startTimer("ExtractSliceLocal");
+                            ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
+                            stopTimer("ExtractSliceLocal");
+                            startTimer("computation");
+                            fermion3dtmp3 = gam*fermion3dtmp2;
+                            prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp3);
+                            MesPhi1 += trace(MFmult(id2,id1)*prop3dtmp*ph3d);
+                            stopTimer("computation");
+
                             startTimer("ExtractSliceLocal");
                             ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
                             stopTimer("ExtractSliceLocal");
                             startTimer("computation");
-                            prop3dtmp = outerProduct(fermion3dtmp1, gam*fermion3dtmp2)*ph3d;
-                            MesPhi1 += trace(prop3dtmp);
-                            prop3dtmp = outerProduct(fermion3dtmp3, gam*fermion3dtmp2)*ph3d;
-                            MesPhi2 += trace(prop3dtmp);
+                            fermion3dtmp3 = gam*fermion3dtmp2;
+                            prop3dtmp1 = outerProduct(fermion3dtmp1, fermion3dtmp3);
+                            MesPhi2 += trace(MFmult(id2,id1)*prop3dtmp1*ph3d);
                             stopTimer("computation");
                         }
                     }
-                    std::stringstream gamStr; gamStr << gam;
+                    std::stringstream gamStr; gamStr << gamma;
 
                     startTimer("final contraction cl");
                     sliceSum(MesPhi1, clBuf, Tdir);
@@ -405,7 +416,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
                         ccResults[tdx].momSrc   = momSrc;
                         ccResults[tdx].tSrc     = tSrc;
                     }
-                    stopTimer("final contraction cl");
+                    stopTimer("final contraction cc");
 
                     tdx++;
                 }
