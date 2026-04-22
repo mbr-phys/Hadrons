@@ -487,6 +487,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                         // pre-contract distillation index id3 between two MFs
                         startTimer("MF mult");
                         DistilMesonFieldMatrix<ComplexD> MFmult;
+                        // PMF[d1,d3] * DMeson[d3,d2] -> MFmult[d1,d2]
                         A2AContraction::mul(MFmult, RhoPhiMF(tKpi,tKpi,tD), DMesonMF(tD,tD,tD));
                         stopTimer("MF mult");
                         for (unsigned int sdx = 0; sdx < gammas.size(); sdx++)
@@ -511,10 +512,11 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     stopTimer("ExtractSliceLocal");
                                     startTimer("computation contractPhis Tree");
                                     fermion3dtmp3 = g34*fermion3dtmp2;
-                                    fermion3dtmp2 = fermion3dtmp3*RhoRhoMF(tKpi,tKpi,tKpi)(id2,id1);
-                                    prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp2);
+                                    fermion3dtmp2 = fermion3dtmp3;
+                                    // outerProduct(l, r) = l*conj(r); we want conj(l)*r 
+                                    prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp2);
                                     // sum_{spin,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d2,d1]) 
-                                    MKpiPhi += traceSpin(prop3dtmp);
+                                    MKpiPhi += traceSpin(prop3dtmp*RhoRhoMF(tKpi,tKpi,tKpi)(id2,id1));
                                     stopTimer("computation contractPhis Tree");
 
                                     startTimer("ExtractSliceLocal");
@@ -522,7 +524,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                                     stopTimer("ExtractSliceLocal");
                                     startTimer("computation contractPhis Tree");
                                     fermion3dtmp3 = g12*fermion3dtmp1;
-                                    prop3dtmp = outerProduct(fermion3dtmp2, fermion3dtmp3);
+                                    prop3dtmp = outerProductC(fermion3dtmp2, fermion3dtmp3);
                                     // sum_{spin,d1,d2,d3} (DMeson[d3,d2] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
                                     MDPhi += traceSpin(prop3dtmp*MFmult(id1,id2));
                                     stopTimer("computation contractPhis Tree");

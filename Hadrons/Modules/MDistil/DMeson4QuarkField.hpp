@@ -438,8 +438,8 @@ void TDMeson4QuarkField<FImpl>::execute(void)
                 //fermion3dtmp3 = g12*vec_light[id2];
                 ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light,0,id2,Tdir);
                 fermion3dtmp3 = g12*fermion3dtmp2;
-                fermion3dtmp2 = DMeson(tD,tD,tD)(id1,id2)*fermion3dtmp3;
-                prop3dtmp = outerProduct(fermion3dtmp1,fermion3dtmp2);
+                fermion3dtmp2 = fermion3dtmp3*DMeson(tD,tD,tD)(id2,id1);
+                prop3dtmp = outerProductC(fermion3dtmp1,fermion3dtmp2);
                 // this object is sum_{spin,d1,d2} (DMeson[d1,d2] * vector1[d1] * gamma12 * vector2[d2]) on timeslice tH
                 MPhiPhi += traceSpin(prop3dtmp);
             }
@@ -510,7 +510,7 @@ void TDMeson4QuarkField<FImpl>::execute(void)
                     ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light,0,id2,Tdir);
                     fermion3dtmp3 = g34*fermion3dtmp2;
                     fermion3dtmp2 = fermion3dtmp3;
-                    prop3dtmp = outerProduct(fermion3dtmp1,fermion3dtmp2);
+                    prop3dtmp = outerProductC(fermion3dtmp1,fermion3dtmp2);
 
                     // colour-singlet -> two colour traces
                     cplx3dtmp = trace(prop3dtmp)*traceColour(MPhiPhi)*ph3d;
