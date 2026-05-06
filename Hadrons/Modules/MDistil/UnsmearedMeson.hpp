@@ -118,8 +118,8 @@ void TUnsmearedMeson<FImpl>::setup(void)
     envTmp   (PropagatorField,   "prop3dtmp1"    ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi1"       ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi2"       ,1, gridLD);
-    envTmpLat(ComplexField,      "ph");
-    envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
+    //envTmpLat(ComplexField,      "ph");
+    //envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
     envTmpLat(ComplexField,      "coor");
 
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
@@ -276,9 +276,9 @@ void TUnsmearedMeson<FImpl>::execute(void)
     envGetTmp(ComplexField,       MesPhi1);
     envGetTmp(ComplexField,       MesPhi2);
 
-    envGetTmp(ComplexField, coor);
-    envGetTmp(ComplexField, ph);
-    envGetTmp(ComplexField, ph3d);
+    //envGetTmp(ComplexField, coor);
+    //envGetTmp(ComplexField, ph);
+    //envGetTmp(ComplexField, ph3d);
         
     envGetTmp(FermionField,    fermionDDtmp_light);
     envGetTmp(FermionField,    fermionDDtmp_charm);
@@ -332,18 +332,18 @@ void TUnsmearedMeson<FImpl>::execute(void)
                 std::string momSrc = momSrcs[ddx];
                 std::string momSnk = momSnks[ddx];
                 // momentum phase e^{ipx} for Hw
-                Complex           i(0.0,1.0);
-                std::vector<Real> p;
-                p  = strToVec<Real>(momSnk);
-                ph = Zero();
-                for(unsigned int mu = 0; mu < env().getNd(); mu++)
-                {
-                    LatticeCoordinate(coor, mu);
-                    ph = ph + (p[mu]/env().getDim(mu))*coor;
-                }
-                ph = exp((Real)(2*M_PI)*i*ph);
-                // 3D phase e^{ipx}
-                ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
+                //Complex           i(0.0,1.0);
+                //std::vector<Real> p;
+                //p  = strToVec<Real>(momSnk);
+                //ph = Zero();
+                //for(unsigned int mu = 0; mu < env().getNd(); mu++)
+                //{
+                //    LatticeCoordinate(coor, mu);
+                //    ph = ph + (p[mu]/env().getDim(mu))*coor;
+                //}
+                //ph = exp((Real)(2*M_PI)*i*ph);
+                //// 3D phase e^{ipx}
+                //ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
 
                 ContractionDistilMesonField<ComplexD,ComplexF> &SrcMF = RhoRhoMesonMFs.at(RhoRhoGamma+"_p"+momSrc);
                 DistilMesonFieldMatrix<ComplexD> MFmult = SrcMF(tSrc,tSrc,tSrc);
@@ -352,6 +352,8 @@ void TUnsmearedMeson<FImpl>::execute(void)
                 {
                     Gamma::Algebra gamma = gammas[sdx];
                     Gamma gam(gamma);
+
+                    std::stringstream gamStr; gamStr << gamma;
 
                     MesPhi1 = Zero();
                     MesPhi2 = Zero();
@@ -362,14 +364,13 @@ void TUnsmearedMeson<FImpl>::execute(void)
                         stopTimer("ExtractSliceLocal");
                         for (int id2=0; id2<nDL*nDS; id2++)
                         {
-
                             startTimer("ExtractSliceLocal");
                             ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
                             stopTimer("ExtractSliceLocal");
                             startTimer("computation");
                             fermion3dtmp3 = gam*fermion3dtmp2;
-                            prop3dtmp = outerProduct(fermion3dtmp1, fermion3dtmp3);
-                            MesPhi1 += trace(MFmult(id2,id1)*prop3dtmp*ph3d);
+                            prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                            MesPhi1 += trace(prop3dtmp)*MFmult(id2,id1);
                             stopTimer("computation");
 
                             startTimer("ExtractSliceLocal");
@@ -377,12 +378,11 @@ void TUnsmearedMeson<FImpl>::execute(void)
                             stopTimer("ExtractSliceLocal");
                             startTimer("computation");
                             fermion3dtmp3 = gam*fermion3dtmp2;
-                            prop3dtmp1 = outerProduct(fermion3dtmp1, fermion3dtmp3);
-                            MesPhi2 += trace(MFmult(id2,id1)*prop3dtmp1*ph3d);
+                            prop3dtmp1 = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                            MesPhi2 += trace(prop3dtmp1)*MFmult(id2,id1);
                             stopTimer("computation");
                         }
                     }
-                    std::stringstream gamStr; gamStr << gamma;
 
                     startTimer("final contraction cl");
                     sliceSum(MesPhi1, clBuf, Tdir);
