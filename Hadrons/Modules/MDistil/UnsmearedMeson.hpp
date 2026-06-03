@@ -114,10 +114,12 @@ void TUnsmearedMeson<FImpl>::setup(void)
     envTmp   (FermionField,      "fermion3dtmp1" ,1, gridLD);
     envTmp   (FermionField,      "fermion3dtmp2" ,1, gridLD);
     envTmp   (FermionField,      "fermion3dtmp3" ,1, gridLD);
+    envTmp   (FermionField,      "fermion3dtmp4" ,1, gridLD);
     envTmp   (PropagatorField,   "prop3dtmp"     ,1, gridLD);
     envTmp   (PropagatorField,   "prop3dtmp1"    ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi1"       ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi2"       ,1, gridLD);
+    envTmp   (ComplexField,      "MesPhi3"       ,1, gridLD);
     //envTmpLat(ComplexField,      "ph");
     //envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
     envTmpLat(ComplexField,      "coor");
@@ -133,6 +135,7 @@ void TUnsmearedMeson<FImpl>::setup(void)
     envTmp(FermionField,    "fermionDDtmp_light" ,1, gridDD);
     envTmp(FermionField,    "fermionDDtmp_charm" ,1, gridDD);
 
+    envCreate(HadronsSerializable, getName()+"_ll", 1, 0);
     envCreate(HadronsSerializable, getName()+"_cl", 1, 0);
     envCreate(HadronsSerializable, getName()+"_cc", 1, 0);
 }
@@ -250,10 +253,11 @@ void TUnsmearedMeson<FImpl>::execute(void)
 
     std::vector<Gamma::Algebra> gammas = strToVec<Gamma::Algebra>(par().gammas);
 
-    std::vector<Result> clResults, ccResults;
+    std::vector<Result> clResults, ccResults, llResults;
     int resultSize = gammas.size()*tSrcs.size()*nMoms;
     clResults.resize(resultSize);
     ccResults.resize(resultSize);
+    llResults.resize(resultSize);
     LOG(Message) << "Results objects have gammas (" << gammas.size() << ") * tSrcs (" << tSrcs.size() 
                  << ") * nMoms (" << nMoms << ") = " << resultSize << " size" << std::endl;
     for (unsigned int tSrci = 0; tSrci < tSrcs.size(); tSrci++)
@@ -264,6 +268,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
             unsigned int ridx = tSrci*nMoms*gammas.size() + i;
             clResults[ridx].corr.resize(nT);
             ccResults[ridx].corr.resize(nT);
+            llResults[ridx].corr.resize(nT);
         }
     }
     
@@ -271,10 +276,12 @@ void TUnsmearedMeson<FImpl>::execute(void)
     envGetTmp(FermionField,       fermion3dtmp1);
     envGetTmp(FermionField,       fermion3dtmp2);
     envGetTmp(FermionField,       fermion3dtmp3);
+    envGetTmp(FermionField,       fermion3dtmp4);
     envGetTmp(PropagatorField,    prop3dtmp);
     envGetTmp(PropagatorField,    prop3dtmp1);
     envGetTmp(ComplexField,       MesPhi1);
     envGetTmp(ComplexField,       MesPhi2);
+    envGetTmp(ComplexField,       MesPhi3);
 
     //envGetTmp(ComplexField, coor);
     //envGetTmp(ComplexField, ph);
@@ -298,7 +305,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
         {
             tSnk = t + Ntfirst;
 
-            std::vector<TComplex> ccBuf, clBuf;
+            std::vector<TComplex> ccBuf, clBuf, llBuf;
 
             // read perambulator
             LOG(Message) << "Starting charm perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
@@ -357,10 +364,12 @@ void TUnsmearedMeson<FImpl>::execute(void)
 
                     MesPhi1 = Zero();
                     MesPhi2 = Zero();
+                    MesPhi3 = Zero();
                     for (int id1=0; id1<nDL*nDS; id1++)
                     {
                         startTimer("ExtractSliceLocal");
                         ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_charm, 0, id1, Tdir);
+                        ExtractSliceLocal(fermion3dtmp4, fermionDDtmp_light, 0, id1, Tdir);
                         stopTimer("ExtractSliceLocal");
                         for (int id2=0; id2<nDL*nDS; id2++)
                         {
@@ -371,6 +380,12 @@ void TUnsmearedMeson<FImpl>::execute(void)
                             fermion3dtmp3 = gam*fermion3dtmp2;
                             prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp3);
                             MesPhi1 += trace(prop3dtmp)*MFmult(id2,id1);
+                            stopTimer("computation");
+
+                            startTimer("computation");
+                            fermion3dtmp3 = gam*fermion3dtmp2;
+                            prop3dtmp = outerProductC(fermion3dtmp4, fermion3dtmp3);
+                            MesPhi3 += trace(prop3dtmp)*MFmult(id2,id1);
                             stopTimer("computation");
 
                             startTimer("ExtractSliceLocal");
@@ -418,6 +433,23 @@ void TUnsmearedMeson<FImpl>::execute(void)
                     }
                     stopTimer("final contraction cc");
 
+                    startTimer("final contraction ll");
+                    sliceSum(MesPhi3, llBuf, Tdir);
+
+                    LOG(Message) << "Updating llResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
+                    llResults[tdx].corr[t] = TensorRemove(llBuf[0]);
+
+                    if (t == 0) // only edit metadata on first tSnk for each tSrc
+                    {
+                        LOG(Message) << "Updating metadata for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
+                        llResults[tdx].gammaSnk = gamStr.str();
+                        llResults[tdx].gammaSrc = RhoRhoGamma;
+                        llResults[tdx].momSnk   = momSnk;
+                        llResults[tdx].momSrc   = momSrc;
+                        llResults[tdx].tSrc     = tSrc;
+                    }
+                    stopTimer("final contraction ll");
+
                     tdx++;
                 }
             }
@@ -431,6 +463,9 @@ void TUnsmearedMeson<FImpl>::execute(void)
     saveResult(par().output+"_cc", "ccMeson", ccResults);
     auto &ccOut = envGet(HadronsSerializable, getName()+"_cc");
     ccOut = ccResults;
+    saveResult(par().output+"_ll", "llMeson", llResults);
+    auto &llOut = envGet(HadronsSerializable, getName()+"_ll");
+    llOut = llResults;
     stopTimer("results io");
 }
 
