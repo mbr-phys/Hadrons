@@ -136,8 +136,8 @@ void TDtoKpiTree<FImpl>::setup(void)
     envTmp   (ColourMatrixField, "MKpiPhi"       ,1, gridLD);
     envTmp   (ColourMatrixField, "MDPhi"         ,1, gridLD);
     envTmp   (ComplexField,      "MColour"       ,1, gridLD);
-    envTmpLat(ComplexField,      "ph");
-    envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
+    //envTmpLat(ComplexField,      "ph");
+    //envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
     envTmpLat(ComplexField,      "coor");
 
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
@@ -352,19 +352,19 @@ void TDtoKpiTree<FImpl>::execute(void)
     envGetTmp(ComplexField,       MColour);
 
     // momentum phase e^{ipx} for Hw
-    Complex           i(0.0,1.0);
-    std::vector<Real> p;
-    p  = strToVec<Real>(par().momHw);
-    envGetTmp(ComplexField, coor);
-    envGetTmp(ComplexField, ph);
-    envGetTmp(ComplexField, ph3d);
-    ph = Zero();
-    for(unsigned int mu = 0; mu < env().getNd(); mu++)
-    {
-        LatticeCoordinate(coor, mu);
-        ph = ph + (p[mu]/env().getDim(mu))*coor;
-    }
-    ph = exp((Real)(2*M_PI)*i*ph);
+    //Complex           i(0.0,1.0);
+    //std::vector<Real> p;
+    //p  = strToVec<Real>(par().momHw);
+    //envGetTmp(ComplexField, coor);
+    //envGetTmp(ComplexField, ph);
+    //envGetTmp(ComplexField, ph3d);
+    //ph = Zero();
+    //for(unsigned int mu = 0; mu < env().getNd(); mu++)
+    //{
+    //    LatticeCoordinate(coor, mu);
+    //    ph = ph + (p[mu]/env().getDim(mu))*coor;
+    //}
+    //ph = exp((Real)(2*M_PI)*i*ph);
         
     envGetTmp(FermionField,    fermionDDtmp_light);
     envGetTmp(FermionField,    fermionDDtmp_charm);
@@ -390,7 +390,7 @@ void TDtoKpiTree<FImpl>::execute(void)
             }
 
             // 3D phase e^{ipx}
-            ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
+            //ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
 
             // read perambulator
             LOG(Message) << "Starting charm perambulator I/O for (tD,tH) = (" << tD << "," << tH << ")" << std::endl;
@@ -531,7 +531,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                                 }
                             }
                             startTimer("final contraction singlet");
-                            MColour = traceColour(MDPhi)*ph3d*traceColour(MKpiPhi);
+                            MColour = traceColour(MDPhi)*traceColour(MKpiPhi);
                             sliceSum(MColour, Sbuf, Tdir);
 
                             LOG(Message) << "Updating Sresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
@@ -556,7 +556,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                             stopTimer("final contraction singlet");
 
                             startTimer("final contraction rearranged");
-                            MColour = traceColour(MDPhi*ph3d*MKpiPhi);
+                            MColour = traceColour(MDPhi*MKpiPhi);
                             sliceSum(MColour, Rbuf, Tdir);
 
                             LOG(Message) << "Updating Rresults for (tdx,tH) = (" << tdx << "," << tH << ")" << std::endl;
