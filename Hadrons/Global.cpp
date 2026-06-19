@@ -101,12 +101,12 @@ int Hadrons::mkdir(const std::string dirName)
 {
     if (!dirName.empty() and access(dirName.c_str(), R_OK|W_OK|X_OK))
     {
-        mode_t mode755;
+        mode_t mode775;
         char   tmp[MAX_PATH_LENGTH];
         char   *p = NULL;
         size_t len;
 
-        mode755 = S_IRWXU|S_IRGRP|S_IXGRP|S_IROTH|S_IXOTH;
+        mode775 = S_IRWXU|S_IRWXG|S_IROTH|S_IXOTH;
 
         snprintf(tmp, sizeof(tmp), "%s", dirName.c_str());
         len = strlen(tmp);
@@ -119,12 +119,12 @@ int Hadrons::mkdir(const std::string dirName)
             if(*p == '/')
             {
                 *p = 0;
-                ::mkdir(tmp, mode755);
+                ::mkdir(tmp, mode775);
                 *p = '/';
             }
         }
 
-        return ::mkdir(tmp, mode755);
+        return ::mkdir(tmp, mode775);
     }
     else
     {
