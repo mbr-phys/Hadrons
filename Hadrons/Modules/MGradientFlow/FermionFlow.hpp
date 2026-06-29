@@ -52,7 +52,9 @@ public:
                                     int, bc,
                                     int, steps,
                                     double, step_size,
-                                    int, meas_interval);
+                                    int, meas_interval,
+                                    std::string, stoutSteps,
+                                    std::string, stoutRho);
 };
 
 template <typename FImpl,typename GImpl,typename FlowAction>
@@ -207,6 +209,17 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
     auto &Uwf = envGet(GaugeField, getName()+"_U");
     Uwf = U;
 
+    bool stout = (!par().stoutSteps.empty() && !par().stoutRho.empty());
+    unsigned int stoutSteps;
+    double stoutRho;
+    if (stout)
+    {
+        stoutSteps = std::stoi(par().stoutSteps);
+        stoutRho = std::stod(par().stoutRho);
+        LOG(Message) << "Stout smearing parameters (" << stoutSteps << ", " << stoutRho 
+                     << ") have been given and will be applied to the flowed gauge fields" << std::endl;
+    }
+
     for (std::string q : par().props) {
         auto &qj = envGet(PropagatorField, q);
         PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
@@ -228,6 +241,21 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 
         // measure gauge observables
         evolve.template gauge_status<GImpl,GaugeField,ComplexField,GaugeLinkField,GaugeResult>(Uwf,Uresult,flowt);
+
+        if (stout)
+        {
+            Smear_Stout<GImpl> smearer(stoutRho, -1);
+            for (unsigned int m = 0; m < Wi.size(); ++m)
+            {
+                GaugeField &Ust = Wi[m];
+                GaugeField buf = Ust;
+                for (unsigned int n = 0; n < stoutSteps; ++n)
+                {
+                    smearer.smear(Ust, buf);
+                    buf = Ust;
+                }
+            }
+        }
 
         // evolve propagators
         for (int i = 0; i < par().props.size(); i++) {
