@@ -506,8 +506,8 @@ void TUnsmearedMeson<FImpl>::execute(void)
                                 MesPhi3 += trace(prop3dtmp)*MFmult(id2,id1);
 
                                 if (!par().vectorStemC.empty()) {
-                                    prop3dtmp2 = outerProductC(fermion3dtmp1, fermion3dtmp3);
-                                    MesPhi1 += trace(prop3dtmp2)*MFmult(id2,id1);
+                                    prop3dtmp1 = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                    MesPhi1 += trace(prop3dtmp1)*MFmult(id2,id1);
                                 }
                                 stopTimer("computation");
                             }
@@ -519,8 +519,8 @@ void TUnsmearedMeson<FImpl>::execute(void)
 
                                 startTimer("computation");
                                 fermion3dtmp3 = gam*fermion3dtmp2;
-                                prop3dtmp1 = outerProductC(fermion3dtmp1, fermion3dtmp3);
-                                MesPhi2 += trace(prop3dtmp1)*MFmult(id2,id1);
+                                prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                MesPhi2 += trace(prop3dtmp)*MFmult(id2,id1);
                                 stopTimer("computation");
                             }
                         }
