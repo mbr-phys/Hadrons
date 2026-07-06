@@ -122,8 +122,6 @@ void TUnsmearedMeson<FImpl>::setup(void)
     envTmp   (ComplexField,      "MesPhi1"       ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi2"       ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi3"       ,1, gridLD);
-    //envTmpLat(ComplexField,      "ph");
-    //envTmp   (ComplexField,      "ph3d"          ,1, gridLD);
     envTmpLat(ComplexField,      "coor");
 
     auto &dilNoise = envGet(DistillationNoise<FImpl>, par().noisePol);
@@ -146,6 +144,17 @@ void TUnsmearedMeson<FImpl>::setup(void)
 template <typename FImpl>
 void TUnsmearedMeson<FImpl>::execute(void)
 {
+
+    if (par().vectorStemC.empty() && par().vectorStemL.empty()) {
+        HADRONS_ERROR(Argument, "at least one of vectorStemC and vectorStemL must be filled"); 
+    } else if (par().vectorStemC.empty() && !par().vectorStemL.empty()) {
+        LOG(Message) << "vectorStemC is empty, only computing pion (ll) correlator(s)" << std::endl;
+    } else if (!par().vectorStemC.empty() && par().vectorStemL.empty()) {
+        LOG(Message) << "vectorStemL is empty, only computing etac (cc) correlator(s)" << std::endl;
+    } else {
+        LOG(Message) << "both vectorStems are given, computing pion (ll), etac (cc), and D meson (cl) correlator(s)" << std::endl;
+    }
+
     // general grid setup
     GridCartesian * gridHD = envGetGrid(FermionField);
     GridCartesian * gridLD = envGetSliceGrid(FermionField,gridHD->Nd() -1);
@@ -439,38 +448,28 @@ void TUnsmearedMeson<FImpl>::execute(void)
 
             std::vector<TComplex> ccBuf, clBuf, llBuf;
 
-            // read perambulator
-            LOG(Message) << "Starting charm perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
+            // read perambulators
             envGetTmp(FermionField,    fermionDDtmp_charm);
-            startTimer("phi_c I/O");
-            readPhiDD(fermionDDtmp_charm, par().vectorStemC, tSrc, tSnk);
-            stopTimer("phi_c I/O");
+            if (!par().vectorStemC.empty()) {
+                LOG(Message) << "Starting charm perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
+                startTimer("phi_c I/O");
+                readPhiDD(fermionDDtmp_charm, par().vectorStemC, tSrc, tSnk);
+                stopTimer("phi_c I/O");
+            }
 
-            // read perambulator
-            LOG(Message) << "Starting light perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
             envGetTmp(FermionField,    fermionDDtmp_light);
-            startTimer("phi_l I/O");
-            readPhiDD(fermionDDtmp_light, par().vectorStemL, tSrc, tSnk);
-            stopTimer("phi_l I/O");
+            if (!par().vectorStemL.empty()) {
+                LOG(Message) << "Starting light perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
+                startTimer("phi_l I/O");
+                readPhiDD(fermionDDtmp_light, par().vectorStemL, tSrc, tSnk);
+                stopTimer("phi_l I/O");
+            }
 
             unsigned int tdx = tSrci*nMoms*gammas.size();
             for (unsigned int ddx = 0; ddx < momSrcs.size(); ddx++) 
             {
                 std::string momSrc = momSrcs[ddx];
                 std::string momSnk = momSnks[ddx];
-                // momentum phase e^{ipx} for Hw
-                //Complex           i(0.0,1.0);
-                //std::vector<Real> p;
-                //p  = strToVec<Real>(momSnk);
-                //ph = Zero();
-                //for(unsigned int mu = 0; mu < env().getNd(); mu++)
-                //{
-                //    LatticeCoordinate(coor, mu);
-                //    ph = ph + (p[mu]/env().getDim(mu))*coor;
-                //}
-                //ph = exp((Real)(2*M_PI)*i*ph);
-                //// 3D phase e^{ipx}
-                //ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
 
                 const auto &MFmult = getSrcMat(RhoRhoGamma+"_p"+momSrc, tSrc);
 
@@ -484,52 +483,78 @@ void TUnsmearedMeson<FImpl>::execute(void)
                     MesPhi1 = Zero();
                     MesPhi2 = Zero();
                     MesPhi3 = Zero();
-                    startTimer("computation");
                     for (int id1=0; id1<nDL*nDS; id1++)
                     {
-                        ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_charm, 0, id1, Tdir);
-                        ExtractSliceLocal(fermion3dtmp4, fermionDDtmp_light, 0, id1, Tdir);
+                        startTimer("ExtractSliceLocal");
+                        if (!par().vectorStemC.empty()) {
+                            ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_charm, 0, id1, Tdir);
+                        }
+                        if (!par().vectorStemL.empty()) {
+                            ExtractSliceLocal(fermion3dtmp4, fermionDDtmp_light, 0, id1, Tdir);
+                        }
+                        stopTimer("ExtractSliceLocal");
                         for (int id2=0; id2<nDL*nDS; id2++)
                         {
-                            ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
-                            fermion3dtmp3 = gam*fermion3dtmp2;
-                            prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp3);
-                            MesPhi1 += trace(prop3dtmp)*MFmult(id2,id1);
+                            if (!par().vectorStemL.empty()) {
+                                startTimer("ExtractSliceLocal");
+                                ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
+                                stopTimer("ExtractSliceLocal");
 
-                            prop3dtmp = outerProductC(fermion3dtmp4, fermion3dtmp3);
-                            MesPhi3 += trace(prop3dtmp)*MFmult(id2,id1);
+                                startTimer("computation");
+                                fermion3dtmp3 = gam*fermion3dtmp2;
+                                prop3dtmp = outerProductC(fermion3dtmp4, fermion3dtmp3);
+                                MesPhi3 += trace(prop3dtmp)*MFmult(id2,id1);
 
-                            ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
-                            fermion3dtmp3 = gam*fermion3dtmp2;
-                            prop3dtmp1 = outerProductC(fermion3dtmp1, fermion3dtmp3);
-                            MesPhi2 += trace(prop3dtmp1)*MFmult(id2,id1);
+                                if (!par().vectorStemC.empty()) {
+                                    prop3dtmp2 = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                    MesPhi1 += trace(prop3dtmp2)*MFmult(id2,id1);
+                                }
+                                stopTimer("computation");
+                            }
+
+                            if (!par().vectorStemC.empty()) {
+                                startTimer("ExtractSliceLocal");
+                                ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
+                                stopTimer("ExtractSliceLocal");
+
+                                startTimer("computation");
+                                fermion3dtmp3 = gam*fermion3dtmp2;
+                                prop3dtmp1 = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                MesPhi2 += trace(prop3dtmp1)*MFmult(id2,id1);
+                                stopTimer("computation");
+                            }
                         }
                     }
-                    stopTimer("computation");
 
-                    startTimer("final contraction cl");
-                    sliceSum(MesPhi1, clBuf, Tdir);
+                    if (!par().vectorStemL.empty()) {
+                        startTimer("final contraction ll");
+                        sliceSum(MesPhi3, llBuf, Tdir);
 
-                    LOG(Message) << "Updating clResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
-                    clResults[tdx].corr[tSnk] = TensorRemove(clBuf[0]);
+                        LOG(Message) << "Updating llResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
+                        llResults[tdx].corr[tSnk] = TensorRemove(llBuf[0]);
 
-                    stopTimer("final contraction cl");
+                        stopTimer("final contraction ll");
 
-                    startTimer("final contraction cc");
-                    sliceSum(MesPhi2, ccBuf, Tdir);
+                        if (!par().vectorStemC.empty()) {
+                            startTimer("final contraction cl");
+                            sliceSum(MesPhi1, clBuf, Tdir);
 
-                    LOG(Message) << "Updating ccResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
-                    ccResults[tdx].corr[tSnk] = TensorRemove(ccBuf[0]);
+                            LOG(Message) << "Updating clResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
+                            clResults[tdx].corr[tSnk] = TensorRemove(clBuf[0]);
 
-                    stopTimer("final contraction cc");
+                            stopTimer("final contraction cl");
+                        }
+                    }
 
-                    startTimer("final contraction ll");
-                    sliceSum(MesPhi3, llBuf, Tdir);
+                    if (!par().vectorStemC.empty()) {
+                        startTimer("final contraction cc");
+                        sliceSum(MesPhi2, ccBuf, Tdir);
 
-                    LOG(Message) << "Updating llResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
-                    llResults[tdx].corr[tSnk] = TensorRemove(llBuf[0]);
+                        LOG(Message) << "Updating ccResults for (tdx,tSnk) = (" << tdx << "," << tSnk << ")" << std::endl;
+                        ccResults[tdx].corr[tSnk] = TensorRemove(ccBuf[0]);
 
-                    stopTimer("final contraction ll");
+                        stopTimer("final contraction cc");
+                    }
 
                     tdx++;
                 }
@@ -556,22 +581,32 @@ void TUnsmearedMeson<FImpl>::execute(void)
         }
         stopTimer("result time merge");
     };
-    mergeResultCorr(clResults);
-    mergeResultCorr(ccResults);
-    mergeResultCorr(llResults);
-
-    startTimer("results io");
+    startTimer("results gather/io");
     LOG(Message) << "Writing results to " << par().output << std::endl;
-    saveResult(par().output+"_cl", "clMeson", clResults);
-    auto &clOut = envGet(HadronsSerializable, getName()+"_cl");
-    clOut = clResults;
-    saveResult(par().output+"_cc", "ccMeson", ccResults);
-    auto &ccOut = envGet(HadronsSerializable, getName()+"_cc");
-    ccOut = ccResults;
-    saveResult(par().output+"_ll", "llMeson", llResults);
-    auto &llOut = envGet(HadronsSerializable, getName()+"_ll");
-    llOut = llResults;
-    stopTimer("results io");
+    if (!par().vectorStemL.empty()) {
+        mergeResultCorr(llResults);
+
+        saveResult(par().output+"_ll", "llMeson", llResults);
+        auto &llOut = envGet(HadronsSerializable, getName()+"_ll");
+        llOut = llResults;
+
+        if (!par().vectorStemC.empty()) {
+            mergeResultCorr(clResults);
+
+            saveResult(par().output+"_cl", "clMeson", clResults);
+            auto &clOut = envGet(HadronsSerializable, getName()+"_cl");
+            clOut = clResults;
+        }
+    }
+
+    if (!par().vectorStemC.empty()) {
+        mergeResultCorr(ccResults);
+
+        saveResult(par().output+"_cc", "ccMeson", ccResults);
+        auto &ccOut = envGet(HadronsSerializable, getName()+"_cc");
+        ccOut = ccResults;
+    }
+    stopTimer("results gather/io");
 }
 
 END_MODULE_NAMESPACE
