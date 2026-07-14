@@ -101,7 +101,7 @@ std::vector<std::string> TUnsmearedMeson<FImpl>::getInput(void)
 template <typename FImpl>
 std::vector<std::string> TUnsmearedMeson<FImpl>::getOutput(void)
 {
-    std::vector<std::string> out = {getName()+"_cl",getName()+"_cc"};
+    std::vector<std::string> out = {getName()+"_ll",getName()+"_cl",getName()+"_cc"};
     
     return out;
 }

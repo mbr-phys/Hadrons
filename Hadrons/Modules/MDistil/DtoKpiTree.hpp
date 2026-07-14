@@ -570,6 +570,41 @@ void TDtoKpiTree<FImpl>::execute(void)
         return it->second;
     };
 
+    struct TimeWork
+    {
+        unsigned int tKpii;
+        int          tHi;
+    };
+    auto getTHIndex = [nT](const int tD, const int tKpi, const int tH, int &tHi)
+    {
+        if ((tH == tD) || (tH == tKpi))
+        {
+            return false;
+        }
+
+        const int tDMinusTKpi = (tD - tKpi + nT) % nT;
+        const int tKpiMinusTD = (tKpi - tD + nT) % nT;
+        const int tHMinusTKpi = (tH - tKpi + nT) % nT;
+        const int tHMinusTD   = (tH - tD + nT) % nT;
+        const int tDMinusTH   = (tD - tH + nT) % nT;
+
+        if ((tDMinusTKpi < tKpiMinusTD) && (tDMinusTH < tDMinusTKpi))
+        {
+            tHi = tHMinusTKpi - 1;
+            return true;
+        }
+        if ((tKpiMinusTD <= tDMinusTKpi) && (tHMinusTD < tKpiMinusTD))
+        {
+            tHi = tHMinusTD - 1;
+            return true;
+        }
+        return false;
+    };
+
+    unsigned int charmReads = 0;
+    unsigned int lightReads = 0;
+    unsigned int skippedTH  = 0;
+
     for (unsigned int tDi = 0; tDi < tDs.size(); tDi++)
     {
         unsigned int tD = tDs[tDi];
@@ -580,18 +615,26 @@ void TDtoKpiTree<FImpl>::execute(void)
         }
 
         int tH;
-        std::string tFileName;
         for (int t = 0; t < Ntlocal; t++)
         {
             tH = t + Ntfirst;
-            if (tH == tD)
+            std::vector<TimeWork> work;
+            for (unsigned int tKpii = 0; tKpii < tKpis.size(); tKpii++)
             {
-                LOG(Message) << "Not including contact terms, skipping tD = " << tD << " and tH = " << tH << std::endl;
-                continue;
+                int tHi;
+                if (getTHIndex(static_cast<int>(tD), static_cast<int>(tKpis[tKpii]), tH, tHi))
+                {
+                    work.push_back({tKpii, tHi});
+                }
             }
 
-            // 3D phase e^{ipx}
-            //ExtractSliceLocal(ph3d,ph,0,t,Tdir);  
+            if (work.empty())
+            {
+                skippedTH++;
+                LOG(Message) << "No contractions require (tD,tH) = (" << tD << "," << tH
+                             << "); skipping perambulator I/O" << std::endl;
+                continue;
+            }
 
             // read perambulator
             LOG(Message) << "Starting charm perambulator I/O for (tD,tH) = (" << tD << "," << tH << ")" << std::endl;
@@ -599,47 +642,13 @@ void TDtoKpiTree<FImpl>::execute(void)
             startTimer("phi_c I/O");
             readPhiDD(fermionDDtmp_charm, par().vectorStemC, tD, tH);
             stopTimer("phi_c I/O");
+            charmReads++;
 
-            for(unsigned int tKpii = 0; tKpii < tKpis.size(); tKpii++)
+            for (const auto &item : work)
             {
-                unsigned int tKpi = tKpis[tKpii];
-                if (tH == tKpi)
-                {
-                    LOG(Message) << "Not including contact terms, skipping tKpi = " << tKpi << " and tH = " << tH << std::endl;
-                    continue;
-                }
-
-                std::vector<unsigned int> tHs;
-                int tDMinusTKpi = (tD - tKpi + nT) % nT;
-                int tKpiMinusTD = (tKpi - tD + nT) % nT;
-                int tHMinusTKpi = (tH - tKpi + nT) % nT;
-                int tKpiMinusTH = (tKpi - tH + nT) % nT;
-                int tHMinusTD   = (tH - tD + nT) % nT;
-                int tDMinusTH   = (tD - tH + nT) % nT;
-                //LOG(Message) << "(tD,tKpi,tH) = (" << tD << "," << tKpi << "," << tH << ")" << std::endl;
-                //LOG(Message) << "    tDMinusTKpi = " << tDMinusTKpi << std::endl;
-                //LOG(Message) << "    tKpiMinusTD = " << tKpiMinusTD << std::endl;
-                //LOG(Message) << "    tHMinusTKpi = " << tHMinusTKpi << std::endl;
-                //LOG(Message) << "    tKpiMinusTH = " << tKpiMinusTH << std::endl;
-                //LOG(Message) << "      tHMinusTD = " << tHMinusTD << std::endl;
-                //LOG(Message) << "      tDMinusTH = " << tDMinusTH << std::endl;
-                int tHi;
-                // double check indexing here
-                if ((tDMinusTKpi < tKpiMinusTD) && (tDMinusTH < tDMinusTKpi)) 
-                {
-                    tHi = tHMinusTKpi-1; 
-                    LOG(Message) << "--> computing backwards signal" << std::endl;
-                }
-                else if ((tKpiMinusTD <= tDMinusTKpi) && (tHMinusTD < tKpiMinusTD))
-                {
-                    tHi = tHMinusTD-1;
-                    LOG(Message) << "--> computing forwards signal" << std::endl;
-                }
-                else
-                {
-                    LOG(Message) << "Only computing three-point functions between tD = " << tD << " and tKpi = " << tKpi << ", skipping tH = " << tH << std::endl;
-                    continue;
-                }
+                const unsigned int tKpii = item.tKpii;
+                const unsigned int tKpi = tKpis[tKpii];
+                const int tHi = item.tHi;
 
                 std::vector<TComplex> Sbuf, Rbuf;
 
@@ -649,6 +658,7 @@ void TDtoKpiTree<FImpl>::execute(void)
                 startTimer("phi_l I/O");
                 readPhiDD(fermionDDtmp_light, par().vectorStemL, tKpi, tH);
                 stopTimer("phi_l I/O");
+                lightReads++;
 
                 unsigned int rdx = tDi*tKpis.size() + tKpii;
                 unsigned int tdx = rdx*nMoms*gammas.size();
@@ -719,6 +729,8 @@ void TDtoKpiTree<FImpl>::execute(void)
             }
         }
     }
+    LOG(Message) << "Perambulator I/O summary on this temporal partition: charm reads = " << charmReads
+                 << ", light reads = " << lightReads << ", skipped tH = " << skippedTH << std::endl;
     auto mergeResultCorr = [&](std::vector<Result> &results)
     {
         startTimer("result time merge");
