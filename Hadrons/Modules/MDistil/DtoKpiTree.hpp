@@ -130,12 +130,8 @@ void TDtoKpiTree<FImpl>::setup(void)
     GridCartesian * gridHD = envGetGrid(FermionField);
     GridCartesian * gridLD = envGetSliceGrid(FermionField,gridHD->Nd() -1);
     
-    envTmp   (FermionField,      "fermion3dtmp1" ,1, gridLD);
-    envTmp   (FermionField,      "fermion3dtmp2" ,1, gridLD);
     envTmp   (FermionField,      "fermion3dtmp3" ,1, gridLD);
-    envTmp   (FermionField,      "fermion3dtmp4" ,1, gridLD);
     envTmp   (PropagatorField,   "prop3dtmp"     ,1, gridLD);
-    envTmp   (PropagatorField,   "prop3dtmp1"     ,1, gridLD);
     envTmp   (ColourMatrixField, "MKpiPhi"       ,1, gridLD);
     envTmp   (ColourMatrixField, "MDPhi"         ,1, gridLD);
     envTmp   (ComplexField,      "MColour"       ,1, gridLD);
@@ -411,12 +407,8 @@ void TDtoKpiTree<FImpl>::execute(void)
     fillResultMetadata();
     
     // Temporary objects
-    envGetTmp(FermionField,       fermion3dtmp1);
-    envGetTmp(FermionField,       fermion3dtmp2);
     envGetTmp(FermionField,       fermion3dtmp3);
-    envGetTmp(FermionField,       fermion3dtmp4);
     envGetTmp(PropagatorField,    prop3dtmp);
-    envGetTmp(PropagatorField,    prop3dtmp1);
     envGetTmp(ColourMatrixField,  MKpiPhi);
     envGetTmp(ColourMatrixField,  MDPhi);
     envGetTmp(ComplexField,       MColour);
@@ -604,20 +596,22 @@ void TDtoKpiTree<FImpl>::execute(void)
     unsigned int charmReads = 0;
     unsigned int lightReads = 0;
     unsigned int skippedTH  = 0;
+    const int nDil = nDL * nDS;
 
-    for (unsigned int tDi = 0; tDi < tDs.size(); tDi++)
+    int tH;
+    for (int t = 0; t < Ntlocal; t++)
     {
-        unsigned int tD = tDs[tDi];
+        tH = t + Ntfirst;
 
-        if(tD>=nT)
+        for (unsigned int tDi = 0; tDi < tDs.size(); tDi++)
         {
-            HADRONS_ERROR(Range, "tD must be smaller than nT");
-        }
+            unsigned int tD = tDs[tDi];
 
-        int tH;
-        for (int t = 0; t < Ntlocal; t++)
-        {
-            tH = t + Ntfirst;
+            if(tD>=nT)
+            {
+                HADRONS_ERROR(Range, "tD must be smaller than nT");
+            }
+
             std::vector<TimeWork> work;
             for (unsigned int tKpii = 0; tKpii < tKpis.size(); tKpii++)
             {
@@ -643,6 +637,12 @@ void TDtoKpiTree<FImpl>::execute(void)
             readPhiDD(fermionDDtmp_charm, par().vectorStemC, tD, tH);
             stopTimer("phi_c I/O");
             charmReads++;
+            std::vector<FermionField> charmSlices(nDil, FermionField(gridLD));
+            startTimer("ExtractSliceLocal");
+            for (int id = 0; id < nDil; ++id) {
+                ExtractSliceLocal(charmSlices[id], fermionDDtmp_charm, 0, id, Tdir);
+            }
+            stopTimer("ExtractSliceLocal");
 
             for (const auto &item : work)
             {
@@ -659,6 +659,12 @@ void TDtoKpiTree<FImpl>::execute(void)
                 readPhiDD(fermionDDtmp_light, par().vectorStemL, tKpi, tH);
                 stopTimer("phi_l I/O");
                 lightReads++;
+                std::vector<FermionField> lightSlices(nDil, FermionField(gridLD));
+                startTimer("ExtractSliceLocal");
+                for (int id = 0; id < nDil; ++id) {
+                    ExtractSliceLocal(lightSlices[id], fermionDDtmp_light, 0, id, Tdir);
+                }
+                stopTimer("ExtractSliceLocal");
 
                 unsigned int rdx = tDi*tKpis.size() + tKpii;
                 unsigned int tdx = rdx*nMoms*gammas.size();
@@ -677,28 +683,30 @@ void TDtoKpiTree<FImpl>::execute(void)
                         {
                             Gamma::Algebra gam12 = gammas[sdx].first, gam34 = gammas[sdx].second;
                             Gamma g12(gam12), g34(gam34);
+                            std::vector<FermionField> g12LightSlices(nDil, FermionField(gridLD));
+                            std::vector<FermionField> g34LightSlices(nDil, FermionField(gridLD));
+                            startTimer("computation contractPhis Tree");
+                            for (int id = 0; id < nDil; ++id)
+                            {
+                                g12LightSlices[id] = g12 * lightSlices[id];
+                                g34LightSlices[id] = g34 * lightSlices[id];
+                            }
 
                             MKpiPhi = Zero();
                             MDPhi   = Zero();
                             MColour = Zero();
                             //   contract 2xphi_l with Kpi(rho,rho)
                             // & contract phi_l, phi_c, DMesonMF
-                            startTimer("computation contractPhis Tree");
-                            for (int id1=0; id1<nDL*nDS; id1++)
+                            for (int id1 = 0; id1 < nDil; id1++)
                             {
-                                ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_light, 0, id1, Tdir);
-                                fermion3dtmp4 = g12*fermion3dtmp1;
-                                for (int id2=0; id2<nDL*nDS; id2++)
+                                for (int id2 = 0; id2 < nDil; id2++)
                                 {
-                                    ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
-                                    fermion3dtmp3 = g34*fermion3dtmp2;
                                     // outerProduct(l, r) = l*conj(r); we want conj(l)*r 
-                                    prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                    prop3dtmp = outerProductC(lightSlices[id1], g34LightSlices[id2]);
                                     // sum_{spin,d1,d2} (vector4[d1] * gamma34 * vector3[d2] * PMF[d2,d1]) 
                                     MKpiPhi += traceSpin(prop3dtmp*RhoRhoMat(id2,id1));
 
-                                    ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
-                                    prop3dtmp = outerProductC(fermion3dtmp2, fermion3dtmp4);
+                                    prop3dtmp = outerProductC(charmSlices[id2], g12LightSlices[id1]);
                                     // sum_{spin,d1,d2,d3} (DMeson[d3,d2] * vector1[d2] * gamma12 * vector2[d1] * PMF[d1,d3]) 
                                     MDPhi += traceSpin(prop3dtmp*MFmult(id1,id2));
                                 }
