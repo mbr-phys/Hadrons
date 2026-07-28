@@ -113,10 +113,7 @@ void TUnsmearedMeson<FImpl>::setup(void)
     GridCartesian * gridHD = envGetGrid(FermionField);
     GridCartesian * gridLD = envGetSliceGrid(FermionField,gridHD->Nd() -1);
     
-    envTmp   (FermionField,      "fermion3dtmp1" ,1, gridLD);
-    envTmp   (FermionField,      "fermion3dtmp2" ,1, gridLD);
     envTmp   (FermionField,      "fermion3dtmp3" ,1, gridLD);
-    envTmp   (FermionField,      "fermion3dtmp4" ,1, gridLD);
     envTmp   (PropagatorField,   "prop3dtmp"     ,1, gridLD);
     envTmp   (PropagatorField,   "prop3dtmp1"    ,1, gridLD);
     envTmp   (ComplexField,      "MesPhi1"       ,1, gridLD);
@@ -333,10 +330,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
     fillResultMetadata();
     
     // Temporary objects
-    envGetTmp(FermionField,       fermion3dtmp1);
-    envGetTmp(FermionField,       fermion3dtmp2);
     envGetTmp(FermionField,       fermion3dtmp3);
-    envGetTmp(FermionField,       fermion3dtmp4);
     envGetTmp(PropagatorField,    prop3dtmp);
     envGetTmp(PropagatorField,    prop3dtmp1);
     envGetTmp(ComplexField,       MesPhi1);
@@ -433,18 +427,19 @@ void TUnsmearedMeson<FImpl>::execute(void)
 
     int tSnk;
     std::string tFileName;
-    for (unsigned int tSrci = 0; tSrci < tSrcs.size(); tSrci++)
+    const int nDil = nDL * nDS;
+    for (int t = 0; t < Ntlocal; t++)
     {
-        unsigned int tSrc = tSrcs[tSrci];
+        tSnk = t + Ntfirst;
 
-        if(tSrc>=nT)
+        for (unsigned int tSrci = 0; tSrci < tSrcs.size(); tSrci++)
         {
-            HADRONS_ERROR(Range, "tSrc must be smaller than nT");
-        }
+            unsigned int tSrc = tSrcs[tSrci];
 
-        for (int t = 0; t < Ntlocal; t++)
-        {
-            tSnk = t + Ntfirst;
+            if(tSrc>=nT)
+            {
+                HADRONS_ERROR(Range, "tSrc must be smaller than nT");
+            }
 
             std::vector<TComplex> ccBuf, clBuf, llBuf;
 
@@ -465,6 +460,24 @@ void TUnsmearedMeson<FImpl>::execute(void)
                 stopTimer("phi_l I/O");
             }
 
+            std::vector<FermionField> charmSlices, lightSlices;
+            if (!par().vectorStemC.empty()) {
+                charmSlices.resize(nDil, FermionField(gridLD));
+                startTimer("ExtractSliceLocal");
+                for (int id = 0; id < nDil; ++id) {
+                    ExtractSliceLocal(charmSlices[id], fermionDDtmp_charm, 0, id, Tdir);
+                }
+                stopTimer("ExtractSliceLocal");
+            }
+            if (!par().vectorStemL.empty()) {
+                lightSlices.resize(nDil, FermionField(gridLD));
+                startTimer("ExtractSliceLocal");
+                for (int id = 0; id < nDil; ++id) {
+                    ExtractSliceLocal(lightSlices[id], fermionDDtmp_light, 0, id, Tdir);
+                }
+                stopTimer("ExtractSliceLocal");
+            }
+
             unsigned int tdx = tSrci*nMoms*gammas.size();
             for (unsigned int ddx = 0; ddx < momSrcs.size(); ddx++) 
             {
@@ -479,47 +492,48 @@ void TUnsmearedMeson<FImpl>::execute(void)
                     Gamma gam(gamma);
 
                     std::stringstream gamStr; gamStr << gamma;
+                    std::vector<FermionField> gammaCharmSlices, gammaLightSlices;
+                    if (!par().vectorStemC.empty()) {
+                        gammaCharmSlices.resize(nDil, FermionField(gridLD));
+                        startTimer("computation");
+                        for (int id2 = 0; id2 < nDil; ++id2) {
+                            gammaCharmSlices[id2] = gam * charmSlices[id2];
+                        }
+                        stopTimer("computation");
+                    }
+                    if (!par().vectorStemL.empty()) {
+                        gammaLightSlices.resize(nDil, FermionField(gridLD));
+                        startTimer("computation");
+                        for (int id2 = 0; id2 < nDil; ++id2) {
+                            gammaLightSlices[id2] = gam * lightSlices[id2];
+                        }
+                        stopTimer("computation");
+                    }
 
                     MesPhi1 = Zero();
                     MesPhi2 = Zero();
                     MesPhi3 = Zero();
-                    for (int id1=0; id1<nDL*nDS; id1++)
+                    for (int id1 = 0; id1 < nDil; id1++)
                     {
-                        startTimer("ExtractSliceLocal");
-                        if (!par().vectorStemC.empty()) {
-                            ExtractSliceLocal(fermion3dtmp1, fermionDDtmp_charm, 0, id1, Tdir);
-                        }
-                        if (!par().vectorStemL.empty()) {
-                            ExtractSliceLocal(fermion3dtmp4, fermionDDtmp_light, 0, id1, Tdir);
-                        }
-                        stopTimer("ExtractSliceLocal");
-                        for (int id2=0; id2<nDL*nDS; id2++)
+                        const FermionField *charmSlice1 = par().vectorStemC.empty() ? nullptr : &charmSlices[id1];
+                        const FermionField *lightSlice1 = par().vectorStemL.empty() ? nullptr : &lightSlices[id1];
+                        for (int id2 = 0; id2 < nDil; id2++)
                         {
                             if (!par().vectorStemL.empty()) {
-                                startTimer("ExtractSliceLocal");
-                                ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_light, 0, id2, Tdir);
-                                stopTimer("ExtractSliceLocal");
-
                                 startTimer("computation");
-                                fermion3dtmp3 = gam*fermion3dtmp2;
-                                prop3dtmp = outerProductC(fermion3dtmp4, fermion3dtmp3);
+                                prop3dtmp = outerProductC(*lightSlice1, gammaLightSlices[id2]);
                                 MesPhi3 += trace(prop3dtmp)*MFmult(id2,id1);
 
                                 if (!par().vectorStemC.empty()) {
-                                    prop3dtmp1 = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                    prop3dtmp1 = outerProductC(*charmSlice1, gammaLightSlices[id2]);
                                     MesPhi1 += trace(prop3dtmp1)*MFmult(id2,id1);
                                 }
                                 stopTimer("computation");
                             }
 
                             if (!par().vectorStemC.empty()) {
-                                startTimer("ExtractSliceLocal");
-                                ExtractSliceLocal(fermion3dtmp2, fermionDDtmp_charm, 0, id2, Tdir);
-                                stopTimer("ExtractSliceLocal");
-
                                 startTimer("computation");
-                                fermion3dtmp3 = gam*fermion3dtmp2;
-                                prop3dtmp = outerProductC(fermion3dtmp1, fermion3dtmp3);
+                                prop3dtmp = outerProductC(*charmSlice1, gammaCharmSlices[id2]);
                                 MesPhi2 += trace(prop3dtmp)*MFmult(id2,id1);
                                 stopTimer("computation");
                             }
