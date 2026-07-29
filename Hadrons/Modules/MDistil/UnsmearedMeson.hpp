@@ -356,6 +356,7 @@ void TUnsmearedMeson<FImpl>::execute(void)
         return it->second;
     };
 
+    const int nDil = nDL * nDS;
     const bool readRaw3DField = (par().readRaw3DField != 0);
     std::vector<int> rawTimeSources;
     if(readRaw3DField)
@@ -370,6 +371,15 @@ void TUnsmearedMeson<FImpl>::execute(void)
             std::iota(rawTimeSources.begin(), rawTimeSources.end(), 0);
         }
     }
+    auto getRawSourceOffset = [&](const unsigned int tSm)
+    {
+        auto sourceIt = std::find(rawTimeSources.begin(), rawTimeSources.end(), static_cast<int>(tSm));
+        if(sourceIt == rawTimeSources.end())
+        {
+            HADRONS_ERROR(Io, "raw 3D field stem does not contain requested source time " + std::to_string(tSm));
+        }
+        return static_cast<int>(sourceIt - rawTimeSources.begin());
+    };
 
     auto readConvertedDD = [&](FermionField &field, const std::string &stem, const unsigned int tSm,
                                const int tLoc)
@@ -411,6 +421,47 @@ void TUnsmearedMeson<FImpl>::execute(void)
         }
         reader.close();
     };
+    auto readRawDDSlices = [&](std::vector<FermionField> &slices, ScidacReader &reader,
+                               const std::string &filename, int &currentSourceOffset,
+                               const unsigned int tSm)
+    {
+        const int sourceOffset = getRawSourceOffset(tSm);
+        if ((currentSourceOffset < 0) || (sourceOffset < currentSourceOffset))
+        {
+            if (currentSourceOffset >= 0)
+            {
+                reader.close();
+            }
+            reader.open(filename);
+            currentSourceOffset = 0;
+        }
+
+        for (int i = 0; i < (sourceOffset - currentSourceOffset) * nDil; ++i)
+        {
+            reader.skipScidacFieldRecord();
+        }
+
+        for (int id = 0; id < nDil; ++id)
+        {
+            std::array<unsigned int, 3> index = dilNoise.dilutionCoordinates(id);
+            const int dk = index[DistillationNoise<FImpl>::Index::l];
+            const int ds = index[DistillationNoise<FImpl>::Index::s];
+            const int dSolve = dilNoise.dilutionIndex(tSm, dk, ds);
+            DistillationVectorsIo::Record record;
+
+            reader.readScidacFieldRecord(slices[id], record);
+            if (record.index != static_cast<unsigned int>(dSolve))
+            {
+                HADRONS_ERROR(Io, "vector index mismatch: record.index = " + std::to_string(record.index) +
+                                       " and componentIndex = " + std::to_string(dSolve));
+            }
+            if (record.nNoise != 1 || record.nDL != nDL || record.nDS != nDS || record.nDT != nDT)
+            {
+                HADRONS_ERROR(Io, "dilution parameter mismatch");
+            }
+        }
+        currentSourceOffset = sourceOffset + 1;
+    };
 
     auto readPhiDD = [&](FermionField &field, const std::string &stem, const unsigned int tSm,
                          const int tLoc)
@@ -427,10 +478,33 @@ void TUnsmearedMeson<FImpl>::execute(void)
 
     int tSnk;
     std::string tFileName;
-    const int nDil = nDL * nDS;
     for (int t = 0; t < Ntlocal; t++)
     {
         tSnk = t + Ntfirst;
+        std::vector<FermionField> charmSlices, lightSlices;
+        if (!par().vectorStemC.empty()) {
+            charmSlices.resize(nDil, FermionField(gridLD));
+        }
+        if (!par().vectorStemL.empty()) {
+            lightSlices.resize(nDil, FermionField(gridLD));
+        }
+
+        ScidacReader charmReader, lightReader;
+        int charmSourceOffset = -1;
+        int lightSourceOffset = -1;
+        std::string charmFilename, lightFilename;
+        if (readRaw3DField && !par().vectorStemC.empty()) {
+            charmFilename = par().vectorStemC + "." + std::to_string(vm().getTrajectory()) + "/t" +
+                            std::to_string(tSnk) + "_pkg.bin";
+            charmReader.open(charmFilename);
+            charmSourceOffset = 0;
+        }
+        if (readRaw3DField && !par().vectorStemL.empty()) {
+            lightFilename = par().vectorStemL + "." + std::to_string(vm().getTrajectory()) + "/t" +
+                            std::to_string(tSnk) + "_pkg.bin";
+            lightReader.open(lightFilename);
+            lightSourceOffset = 0;
+        }
 
         for (unsigned int tSrci = 0; tSrci < tSrcs.size(); tSrci++)
         {
@@ -444,38 +518,38 @@ void TUnsmearedMeson<FImpl>::execute(void)
             std::vector<TComplex> ccBuf, clBuf, llBuf;
 
             // read perambulators
-            envGetTmp(FermionField,    fermionDDtmp_charm);
             if (!par().vectorStemC.empty()) {
                 LOG(Message) << "Starting charm perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
                 startTimer("phi_c I/O");
-                readPhiDD(fermionDDtmp_charm, par().vectorStemC, tSrc, tSnk);
+                if (readRaw3DField) {
+                    readRawDDSlices(charmSlices, charmReader, charmFilename, charmSourceOffset, tSrc);
+                } else {
+                    envGetTmp(FermionField, fermionDDtmp_charm);
+                    readPhiDD(fermionDDtmp_charm, par().vectorStemC, tSrc, tSnk);
+                    startTimer("ExtractSliceLocal");
+                    for (int id = 0; id < nDil; ++id) {
+                        ExtractSliceLocal(charmSlices[id], fermionDDtmp_charm, 0, id, Tdir);
+                    }
+                    stopTimer("ExtractSliceLocal");
+                }
                 stopTimer("phi_c I/O");
             }
 
-            envGetTmp(FermionField,    fermionDDtmp_light);
             if (!par().vectorStemL.empty()) {
                 LOG(Message) << "Starting light perambulator I/O for (tSrc,tSnk) = (" << tSrc << "," << tSnk << ")" << std::endl;
                 startTimer("phi_l I/O");
-                readPhiDD(fermionDDtmp_light, par().vectorStemL, tSrc, tSnk);
+                if (readRaw3DField) {
+                    readRawDDSlices(lightSlices, lightReader, lightFilename, lightSourceOffset, tSrc);
+                } else {
+                    envGetTmp(FermionField, fermionDDtmp_light);
+                    readPhiDD(fermionDDtmp_light, par().vectorStemL, tSrc, tSnk);
+                    startTimer("ExtractSliceLocal");
+                    for (int id = 0; id < nDil; ++id) {
+                        ExtractSliceLocal(lightSlices[id], fermionDDtmp_light, 0, id, Tdir);
+                    }
+                    stopTimer("ExtractSliceLocal");
+                }
                 stopTimer("phi_l I/O");
-            }
-
-            std::vector<FermionField> charmSlices, lightSlices;
-            if (!par().vectorStemC.empty()) {
-                charmSlices.resize(nDil, FermionField(gridLD));
-                startTimer("ExtractSliceLocal");
-                for (int id = 0; id < nDil; ++id) {
-                    ExtractSliceLocal(charmSlices[id], fermionDDtmp_charm, 0, id, Tdir);
-                }
-                stopTimer("ExtractSliceLocal");
-            }
-            if (!par().vectorStemL.empty()) {
-                lightSlices.resize(nDil, FermionField(gridLD));
-                startTimer("ExtractSliceLocal");
-                for (int id = 0; id < nDil; ++id) {
-                    ExtractSliceLocal(lightSlices[id], fermionDDtmp_light, 0, id, Tdir);
-                }
-                stopTimer("ExtractSliceLocal");
             }
 
             unsigned int tdx = tSrci*nMoms*gammas.size();
@@ -573,6 +647,12 @@ void TUnsmearedMeson<FImpl>::execute(void)
                     tdx++;
                 }
             }
+        }
+        if (readRaw3DField && !par().vectorStemC.empty()) {
+            charmReader.close();
+        }
+        if (readRaw3DField && !par().vectorStemL.empty()) {
+            lightReader.close();
         }
     }
     auto mergeResultCorr = [&](std::vector<Result> &results)

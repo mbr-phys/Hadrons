@@ -158,6 +158,11 @@ void TDtoKpiTree<FImpl>::setup(void)
 template <typename FImpl>
 void TDtoKpiTree<FImpl>::execute(void)
 {
+    if (par().vectorStemC.empty() || par().vectorStemL.empty())
+    {
+        HADRONS_ERROR(Argument, "DtoKpiTree requires both vectorStemC and vectorStemL");
+    }
+
     // general grid setup
     GridCartesian * gridHD = envGetGrid(FermionField);
     GridCartesian * gridLD = envGetSliceGrid(FermionField,gridHD->Nd() -1);
@@ -431,6 +436,7 @@ void TDtoKpiTree<FImpl>::execute(void)
     envGetTmp(FermionField,    fermionDDtmp_light);
     envGetTmp(FermionField,    fermionDDtmp_charm);
 
+    const int nDil = nDL * nDS;
     const bool readRaw3DField = (par().readRaw3DField != 0);
     std::vector<int> rawTimeSources;
     if(readRaw3DField)
@@ -445,6 +451,15 @@ void TDtoKpiTree<FImpl>::execute(void)
             std::iota(rawTimeSources.begin(), rawTimeSources.end(), 0);
         }
     }
+    auto getRawSourceOffset = [&](const unsigned int tSm)
+    {
+        auto sourceIt = std::find(rawTimeSources.begin(), rawTimeSources.end(), static_cast<int>(tSm));
+        if(sourceIt == rawTimeSources.end())
+        {
+            HADRONS_ERROR(Io, "raw 3D field stem does not contain requested source time " + std::to_string(tSm));
+        }
+        return static_cast<int>(sourceIt - rawTimeSources.begin());
+    };
 
     auto readConvertedDD = [&](FermionField &field, const std::string &stem, const unsigned int tSm,
                                const int tLoc)
@@ -485,6 +500,47 @@ void TDtoKpiTree<FImpl>::execute(void)
             InsertSliceLocal(fermion3dtmp3, field, 0, id, Tdir);
         }
         reader.close();
+    };
+    auto readRawDDSlices = [&](std::vector<FermionField> &slices, ScidacReader &reader,
+                               const std::string &filename, int &currentSourceOffset,
+                               const unsigned int tSm)
+    {
+        const int sourceOffset = getRawSourceOffset(tSm);
+        if ((currentSourceOffset < 0) || (sourceOffset < currentSourceOffset))
+        {
+            if (currentSourceOffset >= 0)
+            {
+                reader.close();
+            }
+            reader.open(filename);
+            currentSourceOffset = 0;
+        }
+
+        for (int i = 0; i < (sourceOffset - currentSourceOffset) * nDil; ++i)
+        {
+            reader.skipScidacFieldRecord();
+        }
+
+        for (int id = 0; id < nDil; ++id)
+        {
+            std::array<unsigned int, 3> index = dilNoise.dilutionCoordinates(id);
+            const int dk = index[DistillationNoise<FImpl>::Index::l];
+            const int ds = index[DistillationNoise<FImpl>::Index::s];
+            const int dSolve = dilNoise.dilutionIndex(tSm, dk, ds);
+            DistillationVectorsIo::Record record;
+
+            reader.readScidacFieldRecord(slices[id], record);
+            if (record.index != static_cast<unsigned int>(dSolve))
+            {
+                HADRONS_ERROR(Io, "vector index mismatch: record.index = " + std::to_string(record.index) +
+                                       " and componentIndex = " + std::to_string(dSolve));
+            }
+            if (record.nNoise != 1 || record.nDL != nDL || record.nDS != nDS || record.nDT != nDT)
+            {
+                HADRONS_ERROR(Io, "dilution parameter mismatch");
+            }
+        }
+        currentSourceOffset = sourceOffset + 1;
     };
 
     auto readPhiDD = [&](FermionField &field, const std::string &stem, const unsigned int tSm,
@@ -596,12 +652,21 @@ void TDtoKpiTree<FImpl>::execute(void)
     unsigned int charmReads = 0;
     unsigned int lightReads = 0;
     unsigned int skippedTH  = 0;
-    const int nDil = nDL * nDS;
 
     int tH;
     for (int t = 0; t < Ntlocal; t++)
     {
         tH = t + Ntfirst;
+        ScidacReader charmReader;
+        int charmSourceOffset = -1;
+        std::string charmFilename;
+        if (readRaw3DField)
+        {
+            charmFilename = par().vectorStemC + "." + std::to_string(vm().getTrajectory()) + "/t" +
+                            std::to_string(tH) + "_pkg.bin";
+            charmReader.open(charmFilename);
+            charmSourceOffset = 0;
+        }
 
         for (unsigned int tDi = 0; tDi < tDs.size(); tDi++)
         {
@@ -632,17 +697,32 @@ void TDtoKpiTree<FImpl>::execute(void)
 
             // read perambulator
             LOG(Message) << "Starting charm perambulator I/O for (tD,tH) = (" << tD << "," << tH << ")" << std::endl;
-            envGetTmp(FermionField,    fermionDDtmp_charm);
             startTimer("phi_c I/O");
-            readPhiDD(fermionDDtmp_charm, par().vectorStemC, tD, tH);
+            std::vector<FermionField> charmSlices(nDil, FermionField(gridLD));
+            if (readRaw3DField) {
+                readRawDDSlices(charmSlices, charmReader, charmFilename, charmSourceOffset, tD);
+            } else {
+                envGetTmp(FermionField, fermionDDtmp_charm);
+                readPhiDD(fermionDDtmp_charm, par().vectorStemC, tD, tH);
+                startTimer("ExtractSliceLocal");
+                for (int id = 0; id < nDil; ++id) {
+                    ExtractSliceLocal(charmSlices[id], fermionDDtmp_charm, 0, id, Tdir);
+                }
+                stopTimer("ExtractSliceLocal");
+            }
             stopTimer("phi_c I/O");
             charmReads++;
-            std::vector<FermionField> charmSlices(nDil, FermionField(gridLD));
-            startTimer("ExtractSliceLocal");
-            for (int id = 0; id < nDil; ++id) {
-                ExtractSliceLocal(charmSlices[id], fermionDDtmp_charm, 0, id, Tdir);
+
+            ScidacReader lightReader;
+            int lightSourceOffset = -1;
+            std::string lightFilename;
+            if (readRaw3DField)
+            {
+                lightFilename = par().vectorStemL + "." + std::to_string(vm().getTrajectory()) + "/t" +
+                                std::to_string(tH) + "_pkg.bin";
+                lightReader.open(lightFilename);
+                lightSourceOffset = 0;
             }
-            stopTimer("ExtractSliceLocal");
 
             for (const auto &item : work)
             {
@@ -654,17 +734,21 @@ void TDtoKpiTree<FImpl>::execute(void)
 
                 // read perambulator
                 LOG(Message) << "Starting light perambulator I/O for (tKpi,tH) = (" << tKpi << "," << tH << ")" << std::endl;
-                envGetTmp(FermionField,    fermionDDtmp_light);
                 startTimer("phi_l I/O");
-                readPhiDD(fermionDDtmp_light, par().vectorStemL, tKpi, tH);
+                std::vector<FermionField> lightSlices(nDil, FermionField(gridLD));
+                if (readRaw3DField) {
+                    readRawDDSlices(lightSlices, lightReader, lightFilename, lightSourceOffset, tKpi);
+                } else {
+                    envGetTmp(FermionField, fermionDDtmp_light);
+                    readPhiDD(fermionDDtmp_light, par().vectorStemL, tKpi, tH);
+                    startTimer("ExtractSliceLocal");
+                    for (int id = 0; id < nDil; ++id) {
+                        ExtractSliceLocal(lightSlices[id], fermionDDtmp_light, 0, id, Tdir);
+                    }
+                    stopTimer("ExtractSliceLocal");
+                }
                 stopTimer("phi_l I/O");
                 lightReads++;
-                std::vector<FermionField> lightSlices(nDil, FermionField(gridLD));
-                startTimer("ExtractSliceLocal");
-                for (int id = 0; id < nDil; ++id) {
-                    ExtractSliceLocal(lightSlices[id], fermionDDtmp_light, 0, id, Tdir);
-                }
-                stopTimer("ExtractSliceLocal");
 
                 unsigned int rdx = tDi*tKpis.size() + tKpii;
                 unsigned int tdx = rdx*nMoms*gammas.size();
@@ -735,6 +819,14 @@ void TDtoKpiTree<FImpl>::execute(void)
                     }
                 }
             }
+            if (readRaw3DField)
+            {
+                lightReader.close();
+            }
+        }
+        if (readRaw3DField)
+        {
+            charmReader.close();
         }
     }
     LOG(Message) << "Perambulator I/O summary on this temporal partition: charm reads = " << charmReads
