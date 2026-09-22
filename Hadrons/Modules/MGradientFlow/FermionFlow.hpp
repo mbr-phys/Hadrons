@@ -215,7 +215,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
     }
     envCreate(HadronsSerializable, getName(), 1, 0);
     envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField), 3.0, par().step_size, 
-        -1.0, par().step_size);
+        -1.0, par().step_size, this);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
