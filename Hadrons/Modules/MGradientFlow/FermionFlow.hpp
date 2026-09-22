@@ -71,7 +71,7 @@ class TFermionFlow: public Module<FermionFlowPar>
 public:
     BASIC_TYPE_ALIASES(FImpl,);
     GAUGE_TYPE_ALIASES(GImpl,);
-    FERM_TYPE_ALIASES(FImpl,);
+    typedef typename FImpl::FermionField FermionField;
     typedef Evolution<FlowAction, GImpl, FImpl> EvolutionType;
 public:
     // constructor
@@ -166,9 +166,9 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
         std::string q = par().props[i];
         std::string type = fieldTypes[i];
         if (type == "FermionField") {
-            envTmpLat(FERMION_FIELD, q+"_wf");
+            envTmpLat(FermionField, q+"_wf");
         } else if (type == "PropagatorField") {
-            envTmpLat(PROPAGATOR_FIELD, q+"_wf");
+            envTmpLat(PropagatorField, q+"_wf");
         } else {
             HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
         }
@@ -184,8 +184,13 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
                 for (size_t j = 0; j < par().props.size(); j++) {
                     std::string q = par().props[j];
                     std::string type = fieldTypes[j];
-                    envCreateLat(type == "FermionField" ? FERMION_FIELD : PROPAGATOR_FIELD, 
-                                 q+"_t"+ftt.str());
+                    if (type == "FermionField") {
+                        envCreateLat(FermionField, q+"_t"+ftt.str());
+                    } else if (type == "PropagatorField") {
+                        envCreateLat(PropagatorField, q+"_t"+ftt.str());
+                    } else {
+                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
+                    }
                 }
             } else {
                 for (std::string q : par().outProps) {
@@ -194,7 +199,13 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
                     if (it != par().props.end()) {
                         size_t idx = std::distance(par().props.begin(), it);
                         std::string type = fieldTypes[idx];
-                        envCreateLat(type == "FermionField" ? FERMION_FIELD : PROPAGATOR_FIELD, q);
+                        if (type == "FermionField") {
+                            envCreateLat(FermionField, q);
+                        } else if (type == "PropagatorField") {
+                            envCreateLat(PropagatorField, q);
+                        } else {
+                            HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
+                        }
                     } else {
                         HADRONS_ERROR(Argument, "outProp " + q + " not found in props");
                     }
@@ -273,13 +284,13 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 
     // Initialize all flowed fields (both FermionField and PropagatorField)
     for (const auto& q : fermionFieldNames) {
-        auto &qj = envGet(FERMION_FIELD, q);
-        FERMION_FIELD &qjwf = *env().template getObject<FERMION_FIELD>(getName()+"_tmp_"+q+"_wf");
+        auto &qj = envGet(FermionField, q);
+        FermionField &qjwf = *env().template getObject<FermionField>(getName()+"_tmp_"+q+"_wf");
         qjwf = qj;
     }
     for (const auto& q : propFieldNames) {
-        auto &qj = envGet(PROPAGATOR_FIELD, q);
-        PROPAGATOR_FIELD &qjwf = *env().template getObject<PROPAGATOR_FIELD>(getName()+"_tmp_"+q+"_wf");
+        auto &qj = envGet(PropagatorField, q);
+        PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
         qjwf = qj;
     }
     
@@ -301,7 +312,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 
         // Flow ALL FermionFields with shared gauge stages
         for (const auto& q : fermionFieldNames) {
-            FERMION_FIELD &qjwf = *env().template getObject<FERMION_FIELD>(getName()+"_tmp_"+q+"_wf");
+            FermionField &qjwf = *env().template getObject<FermionField>(getName()+"_tmp_"+q+"_wf");
             startTimer("FermionField "+q+" flow time "+ftt.str());
             evolve.laplace_flow(Wi[0],Wi[1],Wi[2],qjwf);
             stopTimer("FermionField "+q+" flow time "+ftt.str());
@@ -309,7 +320,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         
         // Flow ALL PropagatorFields with shared gauge stages
         for (const auto& q : propFieldNames) {
-            PROPAGATOR_FIELD &qjwf = *env().template getObject<PROPAGATOR_FIELD>(getName()+"_tmp_"+q+"_wf");
+            PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
             startTimer("PropagatorField "+q+" flow time "+ftt.str());
             evolve.laplace_flow(Wi[0],Wi[1],Wi[2],qjwf);
             stopTimer("PropagatorField "+q+" flow time "+ftt.str());
@@ -324,8 +335,8 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
                 auto it = std::find(par().props.begin(), par().props.end(), q);
                 size_t globalIdx = std::distance(par().props.begin(), it);
                 std::string qo = par().outProps.empty() ? q + suffix : par().outProps[globalIdx];
-                auto &qji = envGet(FERMION_FIELD, qo);
-                FERMION_FIELD &qjwf = *env().template getObject<FERMION_FIELD>(getName()+"_tmp_"+q+"_wf");
+                auto &qji = envGet(FermionField, qo);
+                FermionField &qjwf = *env().template getObject<FermionField>(getName()+"_tmp_"+q+"_wf");
                 qji = qjwf;
             }
             for (size_t j = 0; j < propFieldNames.size(); j++) {
@@ -334,8 +345,8 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
                 auto it = std::find(par().props.begin(), par().props.end(), q);
                 size_t globalIdx = std::distance(par().props.begin(), it);
                 std::string qo = par().outProps.empty() ? q + suffix : par().outProps[globalIdx];
-                auto &qji = envGet(PROPAGATOR_FIELD, qo);
-                PROPAGATOR_FIELD &qjwf = *env().template getObject<PROPAGATOR_FIELD>(getName()+"_tmp_"+q+"_wf");
+                auto &qji = envGet(PropagatorField, qo);
+                PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
                 qji = qjwf;
             }
         }
