@@ -156,7 +156,7 @@ int main(int argc, char *argv[])
     MContraction::StochasticCondensatePropagator::Par scalarPar;
     scalarPar.eta = etaName + "_t0.10";
     scalarPar.phi = phiName[0] + "_t0.10";
-    scalarPar.gamma = "Identity";
+    scalarPar.gamma = Gamma::Algebra::Identity;
     scalarPar.c_fl = 0.0;  // DWF action, chiral symmetry protects
     application.createModule<MContraction::StochasticCondensatePropagator>("scalar_t0.10", scalarPar);
     results.push_back("scalar_t0.10");
@@ -172,7 +172,7 @@ int main(int argc, char *argv[])
     MContraction::StochasticCondensatePropagator::Par derivPar;
     derivPar.eta = etaName + "_t0.10";
     derivPar.phi = "Dslash_phi_t0.10";
-    derivPar.gamma = "Identity";
+    derivPar.gamma = Gamma::Algebra::Identity;
     derivPar.c_fl = 0.0;  // no c_fl for derivative condensate
     application.createModule<MContraction::StochasticCondensatePropagator>("deriv_condensate_t0.10", derivPar);
     results.push_back("deriv_condensate_t0.10");
