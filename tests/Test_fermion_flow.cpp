@@ -165,13 +165,14 @@ int main(int argc, char *argv[])
     // Step 1: Apply D-slash to flowed phi
     MContraction::DslashFieldPropagator::Par dslashPar;
     dslashPar.input = phiName[0] + "_t0.10";
-    dslashPar.gauge = "PositiveFlow_U_t0.10";  // flowed gauge at same flow time
+    dslashPar.gauge = "PositiveFlow_U";  // flowed gauge at same flow time
+    dslashPar.output = "slashed_phi_t0.10";
     application.createModule<MContraction::DslashFieldPropagator>("Dslash_phi_t0.10", dslashPar);
     
     // Step 2: Contract eta with Dslash_phi
     MContraction::StochasticCondensatePropagator::Par derivPar;
     derivPar.eta = etaName + "_t0.10";
-    derivPar.phi = "Dslash_phi_t0.10";
+    derivPar.phi = "slashed_phi_t0.10";
     derivPar.gamma = Gamma::Algebra::Identity;
     derivPar.c_fl = 0.0;  // no c_fl for derivative condensate
     application.createModule<MContraction::StochasticCondensatePropagator>("deriv_condensate_t0.10", derivPar);
