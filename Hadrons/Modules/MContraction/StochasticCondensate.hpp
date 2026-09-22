@@ -174,12 +174,12 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
     
     Gamma G(gammaAlg);
     
-    // Compute -eta^dagger * Gamma * phi
-    LatticeComplex integrand = -adj(eta) * G * phi;
+    // Compute -eta^dagger * Gamma * phi with all spin-colour indices contracted
+    LatticeComplex integrand = -localInnerProduct(eta, G * phi);
     
     // Add c_fl term only for scalar channel (gamma = Identity)
     if (par().c_fl != 0.0 && gammaAlg == Gamma::Algebra::Identity) {
-        LatticeComplex eta_norm2 = adj(eta) * eta;
+        LatticeComplex eta_norm2 = localInnerProduct(eta, eta);
         integrand += par().c_fl * eta_norm2;
     } else if (par().c_fl != 0.0 && gammaAlg != Gamma::Algebra::Identity) {
         LOG(Warning) << "c_fl term ignored for non-scalar gamma structure" << std::endl;
