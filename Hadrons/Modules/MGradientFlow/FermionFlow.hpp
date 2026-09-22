@@ -265,7 +265,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 
     auto &out     = envGet(HadronsSerializable, getName());
     auto &Uresult = out.template hold<GaugeResult>();
-    envTmp(EvolutionType, evolve);
+    envGetTmp(EvolutionType, evolve);
 
     auto &U   = envGet(GaugeField, par().gauge);
     auto &Uwf = envGet(GaugeField, getName()+"_U");
