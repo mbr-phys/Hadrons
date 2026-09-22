@@ -66,11 +66,11 @@ public:
                                     std::string, output);
 };
 
-template <typename Field>
+template <typename FImpl, typename Field>
 class TStochasticCondensate: public Module<StochasticCondensatePar>
 {
 public:
-    FERM_TYPE_ALIASES(Field,);
+    FERM_TYPE_ALIASES(FImpl,);
     class Result: Serializable
     {
     public:
@@ -95,38 +95,38 @@ public:
 };
 
 MODULE_REGISTER_TMP(StochasticCondensateFermion, 
-                    ARG(TStochasticCondensate<FIMPL::FermionField>), 
+                    ARG(TStochasticCondensate<FIMPL, FIMPL::FermionField>), 
                     MContraction);
 MODULE_REGISTER_TMP(StochasticCondensatePropagator, 
-                    ARG(TStochasticCondensate<FIMPL::PropagatorField>), 
+                    ARG(TStochasticCondensate<FIMPL, FIMPL::PropagatorField>), 
                     MContraction);
 
 /******************************************************************************
  *                     TStochasticCondensate implementation                   *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename Field>
-TStochasticCondensate<Field>::TStochasticCondensate(const std::string name)
+template <typename FImpl, typename Field>
+TStochasticCondensate<FImpl, Field>::TStochasticCondensate(const std::string name)
 : Module<StochasticCondensatePar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename Field>
-std::vector<std::string> TStochasticCondensate<Field>::getInput(void)
+template <typename FImpl, typename Field>
+std::vector<std::string> TStochasticCondensate<FImpl, Field>::getInput(void)
 {
     std::vector<std::string> in = {par().eta, par().phi};
     return in;
 }
 
-template <typename Field>
-std::vector<std::string> TStochasticCondensate<Field>::getOutput(void)
+template <typename FImpl, typename Field>
+std::vector<std::string> TStochasticCondensate<FImpl, Field>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
     return out;
 }
 
-template <typename Field>
-std::vector<std::string> TStochasticCondensate<Field>::getOutputFiles(void)
+template <typename FImpl, typename Field>
+std::vector<std::string> TStochasticCondensate<FImpl, Field>::getOutputFiles(void)
 {
     std::vector<std::string> output;
     if (!par().output.empty())
@@ -135,23 +135,23 @@ std::vector<std::string> TStochasticCondensate<Field>::getOutputFiles(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename Field>
-void TStochasticCondensate<Field>::setup(void)
+template <typename FImpl, typename Field>
+void TStochasticCondensate<FImpl, Field>::setup(void)
 {
     envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename Field>
-void TStochasticCondensate<Field>::execute(void)
+template <typename FImpl, typename Field>
+void TStochasticCondensate<FImpl, Field>::execute(void)
 {
     LOG(Message) << "Computing stochastic condensate '" << getName() 
                  << "' using eta='" << par().eta << "' and phi='" << par().phi 
                  << "' with gamma=" << par().gamma 
                  << " and c_fl=" << par().c_fl << "." << std::endl;
 
-    auto &eta = envGet(FIELD_TYPE, par().eta);
-    auto &phi = envGet(FIELD_TYPE, par().phi);
+    auto &eta = envGet(Field, par().eta);
+    auto &phi = envGet(Field, par().phi);
     
     // Parse gamma matrix
     Gamma::Algebra gammaAlg = Gamma::Algebra::Identity;
