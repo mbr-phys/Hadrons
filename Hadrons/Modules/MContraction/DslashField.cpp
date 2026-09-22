@@ -30,5 +30,5 @@ using namespace Hadrons;
 using namespace MContraction;
 
 // Explicit template instantiations for both field types
-template class Grid::Hadrons::MContraction::TDslashField<FIMPL::FermionField>;
-template class Grid::Hadrons::MContraction::TDslashField<FIMPL::PropagatorField>;
+template class Grid::Hadrons::MContraction::TDslashField<FIMPL, FIMPL::FermionField>;
+template class Grid::Hadrons::MContraction::TDslashField<FIMPL, FIMPL::PropagatorField>;
