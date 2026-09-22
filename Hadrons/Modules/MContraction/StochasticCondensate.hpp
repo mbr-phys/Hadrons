@@ -36,13 +36,13 @@ BEGIN_HADRONS_NAMESPACE
 /*
  * Stochastic condensate from noise-source contractions
  * ----------------------------------------------------
- * Computes: -⟨η† Γ φ⟩ + c_fl ⟨η† η⟩ (c_fl only for scalar channel)
+ * Computes: -⟨eta^dagger Gamma phi⟩ + c_fl ⟨eta^dagger eta⟩ (c_fl only for scalar channel)
  * 
  * Parameters:
  * - eta: noise field (FermionField or PropagatorField)
  * - phi: solution field (same type as eta)
  * - gamma: gamma matrix insertion (default: "Identity")
- * - c_fl: improvement coefficient (default: 0; only used for gamma="Identity")
+ * - c_fl: flow-time O(a) improvement coefficient (default: 0; only used for gamma="Identity")
  * 
  * Use cases:
  * - Scalar condensate: gamma="Identity", c_fl=0.5 (Wilson) or 0 (DWF)
@@ -61,7 +61,7 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(StochasticCondensatePar,
                                     std::string, eta,
                                     std::string, phi,
-                                    std::string, gamma,
+                                    Gamma::Algebra, gamma,
                                     double, c_fl,
                                     std::string, output);
 };
@@ -147,41 +147,22 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
 {
     LOG(Message) << "Computing stochastic condensate '" << getName() 
                  << "' using eta='" << par().eta << "' and phi='" << par().phi 
-                 << "' with gamma=" << par().gamma 
+                 << "' with gamma=" << par().gamma
                  << " and c_fl=" << par().c_fl << "." << std::endl;
 
     auto &eta = envGet(Field, par().eta);
     auto &phi = envGet(Field, par().phi);
     
-    // Parse gamma matrix
-    Gamma::Algebra gammaAlg = Gamma::Algebra::Identity;
-    if (par().gamma == "Identity" || par().gamma.empty()) {
-        gammaAlg = Gamma::Algebra::Identity;
-    } else if (par().gamma == "Gamma5") {
-        gammaAlg = Gamma::Algebra::Gamma5;
-    } else if (par().gamma == "GammaT") {
-        gammaAlg = Gamma::Algebra::GammaT;
-    } else if (par().gamma == "GammaX") {
-        gammaAlg = Gamma::Algebra::GammaX;
-    } else if (par().gamma == "GammaY") {
-        gammaAlg = Gamma::Algebra::GammaY;
-    } else if (par().gamma == "GammaZ") {
-        gammaAlg = Gamma::Algebra::GammaZ;
-    } else {
-        // Try to parse as Gamma::Algebra enum value
-        gammaAlg = static_cast<Gamma::Algebra>(std::stoi(par().gamma));
-    }
-    
-    Gamma G(gammaAlg);
+    Gamma G(par().gamma);
     
     // Compute -eta^dagger * Gamma * phi with all spin-colour indices contracted
-    LatticeComplex integrand = -localInnerProduct(eta, G * phi);
+    LatticeComplex integrand = -localInnerProduct(eta, closure(G * phi));
     
     // Add c_fl term only for scalar channel (gamma = Identity)
-    if (par().c_fl != 0.0 && gammaAlg == Gamma::Algebra::Identity) {
+    if (par().c_fl != 0.0 && par().gamma == Gamma::Algebra::Identity) {
         LatticeComplex eta_norm2 = localInnerProduct(eta, eta);
         integrand += par().c_fl * eta_norm2;
-    } else if (par().c_fl != 0.0 && gammaAlg != Gamma::Algebra::Identity) {
+    } else if (par().c_fl != 0.0 && par().gamma != Gamma::Algebra::Identity) {
         LOG(Warning) << "c_fl term ignored for non-scalar gamma structure" << std::endl;
     }
     
@@ -190,7 +171,7 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
     
     // Save result
     Result result;
-    result.gamma = gammaAlg;
+    result.gamma = par().gamma;
     result.c_fl = par().c_fl;
     result.condensate = condensate;
     
