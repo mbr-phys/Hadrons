@@ -9,6 +9,7 @@ EXTRA_PROGRAMS = \
   Test_diskvector           \
   Test_em_field             \
   Test_exact_distil         \
+  Test_propagator_flow		\
   Test_fermion_flow			\
   Test_field_io             \
   Test_free_prop            \
@@ -45,6 +46,9 @@ Test_em_field_LDADD=-lHadrons -lGrid
 
 Test_exact_distil_SOURCES=Test_exact_distil.cpp
 Test_exact_distil_LDADD=-lHadrons -lGrid
+
+Test_propagator_flow_SOURCES=Test_propagator_flow.cpp
+Test_propagator_flow_LDADD=-lHadrons -lGrid
 
 Test_fermion_flow_SOURCES=Test_fermion_flow.cpp
 Test_fermion_flow_LDADD=-lHadrons -lGrid
