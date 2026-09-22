@@ -287,11 +287,12 @@ class Evolution {
             }
         };
 
-        PropagatorField generic_laplace(double a, double b, GaugeField &Umu, const PropagatorField& x_in, int skip_axis) {
+        template <typename Field>
+        Field generic_laplace(double a, double b, GaugeField &Umu, const Field& x_in, int skip_axis) {
             double Nx = Nd;
             if (skip_axis != -1) Nx--;
 
-            PropagatorField x_out = (a + -2.0*Nx*b) * x_in;
+            Field x_out = (a + -2.0*Nx*b) * x_in;
             for (int mu = 0; mu < Nd; mu++) {
                 if (mu != skip_axis) {
                     GaugeLinkField U = PeekIndex<LorentzIndex>(Umu, mu);
@@ -301,12 +302,13 @@ class Evolution {
             return x_out;
         };
 
-        void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, PropagatorField &prop) {
-            PropagatorField psi1 = prop + (epsilon/4.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
-            PropagatorField psi2 = prop + (8.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W1, psi1, -1) - (2.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W0, prop, -1);
-            PropagatorField psi3 = psi1 + (3.0*epsilon/4.0)*generic_laplace(0.0, 1.0, W2, psi2, -1);
+        template <typename Field>
+        void laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, Field &field) {
+            Field psi1 = field + (epsilon/4.0)*generic_laplace(0.0, 1.0, W0, field, -1);
+            Field psi2 = field + (8.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W1, psi1, -1) - (2.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W0, field, -1);
+            Field psi3 = psi1 + (3.0*epsilon/4.0)*generic_laplace(0.0, 1.0, W2, psi2, -1);
 
-            prop = psi3;
+            field = psi3;
         };
 
         std::vector<GaugeField> & evolve_gaugeFF(GaugeField &U, std::vector<int> &bc) {
