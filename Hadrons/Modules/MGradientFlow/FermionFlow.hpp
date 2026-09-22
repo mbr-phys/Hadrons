@@ -37,7 +37,15 @@
 BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
- *                      Propagator Field Gradient Flow                        *
+ *                    Fermion Field Gradient Flow                             *
+ *  Flows multiple fields (FermionField and/or PropagatorField) together,    *
+ *  sharing gauge field evolution and RK stage computation.                   *
+ *                                                                            *
+ *  Parameters:                                                               *
+ *  - props: list of field names to flow                                      *
+ *  - propTypes: optional list of field types ("FermionField" or              *
+ *             "PropagatorField"). If empty, defaultType is used for all.    *
+ *  - defaultType: default field type when propTypes is empty                 *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MGradientFlow)
 
@@ -47,6 +55,8 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(FermionFlowPar,
                                     std::string, output,
                                     std::vector<std::string>, props,
+                                    std::vector<std::string>, propTypes,
+                                    std::string, defaultType,
                                     std::vector<std::string>, outProps,
                                     std::string, gauge,
                                     int, bc,
@@ -55,12 +65,13 @@ public:
                                     int, meas_interval);
 };
 
-template <typename FImpl,typename GImpl,typename FlowAction>
+template <typename FImpl, typename GImpl, typename FlowAction>
 class TFermionFlow: public Module<FermionFlowPar>
 {
 public:
     BASIC_TYPE_ALIASES(FImpl,);
     GAUGE_TYPE_ALIASES(GImpl,);
+    FERM_TYPE_ALIASES(FImpl,);
     typedef Evolution<FlowAction, GImpl, FImpl> EvolutionType;
 public:
     // constructor
@@ -76,19 +87,21 @@ public:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(WilsonFermionFlow,ARG(TFermionFlow<FIMPL,GIMPL,WilsonGaugeAction<GIMPL>>),MGradientFlow);
+MODULE_REGISTER_TMP(FermionFlow,
+                    ARG(TFermionFlow<FIMPL, GIMPL, WilsonGaugeAction<GIMPL>>),
+                    MGradientFlow);
 
 /******************************************************************************
- *                     TFermionFlow implementation                          *
+ *                     TFermionFlow implementation                            *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename FImpl,typename GImpl,typename FlowAction>
+template <typename FImpl, typename GImpl, typename FlowAction>
 TFermionFlow<FImpl,GImpl,FlowAction>::TFermionFlow(const std::string name)
 : Module<FermionFlowPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename FImpl,typename GImpl,typename FlowAction>
+template <typename FImpl, typename GImpl, typename FlowAction>
 std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getInput(void)
 {
     std::vector<std::string> in = {par().gauge}; 
@@ -99,12 +112,12 @@ std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getInput(void)
     return in;
 }
 
-template <typename FImpl,typename GImpl,typename FlowAction>
+template <typename FImpl, typename GImpl, typename FlowAction>
 std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getOutput(void)
 {
-    std::vector<std::string> out = {getName(),getName()+"_U"};
+    std::vector<std::string> out = {getName(), getName()+"_U"};
 
-    // output flowed propagator fields at measurement intervals
+    // output flowed fields at measurement intervals
     for (int i = 1; i <= par().steps; i++) 
     {
         if ((i % par().meas_interval == 0) || (i == par().steps)) {
@@ -126,29 +139,65 @@ std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getOutput(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename FImpl,typename GImpl,typename FlowAction>
+template <typename FImpl, typename GImpl, typename FlowAction>
 void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
 {
     envCreateLat(GaugeField, getName()+"_U");
 
-    // create tmp propagator fields
-    for (std::string q : par().props) {
-        envTmpLat(PropagatorField, q+"_wf");
+    // Validate props and propTypes
+    if (!par().propTypes.empty() && (par().props.size() != par().propTypes.size())) {
+        HADRONS_ERROR(Argument, "propTypes must be empty or have the same size as props");
     }
 
-    // create output propagators
+    // Determine field types for each prop
+    std::vector<std::string> fieldTypes;
+    if (par().propTypes.empty()) {
+        // Use defaultType for all fields
+        if (par().defaultType.empty()) {
+            HADRONS_ERROR(Argument, "defaultType must be specified when propTypes is empty");
+        }
+        fieldTypes.resize(par().props.size(), par().defaultType);
+    } else {
+        fieldTypes = par().propTypes;
+    }
+
+    // Validate field types and create temporaries
+    for (size_t i = 0; i < par().props.size(); i++) {
+        std::string q = par().props[i];
+        std::string type = fieldTypes[i];
+        if (type == "FermionField") {
+            envTmpLat(FERMION_FIELD, q+"_wf");
+        } else if (type == "PropagatorField") {
+            envTmpLat(PROPAGATOR_FIELD, q+"_wf");
+        } else {
+            HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
+        }
+    }
+
+    // create output fields
     for (int i = 1; i <= par().steps; i++) 
     {
         if (( i % par().meas_interval == 0) || (i == par().steps)) {
             double ft = par().step_size * i;
             std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << ft;
             if (par().outProps.empty()) {
-                for (std::string q : par().props) {
-                    envCreateLat(PropagatorField, q+"_t"+ftt.str());
+                for (size_t j = 0; j < par().props.size(); j++) {
+                    std::string q = par().props[j];
+                    std::string type = fieldTypes[j];
+                    envCreateLat(type == "FermionField" ? FERMION_FIELD : PROPAGATOR_FIELD, 
+                                 q+"_t"+ftt.str());
                 }
             } else {
                 for (std::string q : par().outProps) {
-                    envCreateLat(PropagatorField, q);
+                    // Infer type from input props
+                    auto it = std::find(par().props.begin(), par().props.end(), q);
+                    if (it != par().props.end()) {
+                        size_t idx = std::distance(par().props.begin(), it);
+                        std::string type = fieldTypes[idx];
+                        envCreateLat(type == "FermionField" ? FERMION_FIELD : PROPAGATOR_FIELD, q);
+                    } else {
+                        HADRONS_ERROR(Argument, "outProp " + q + " not found in props");
+                    }
                 }
             }
         }
@@ -159,7 +208,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename FImpl,typename GImpl,typename FlowAction>
+template <typename FImpl, typename GImpl, typename FlowAction>
 void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 {
     // action
@@ -174,13 +223,39 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 
     std::string props = "";
     for (std::string q : par().props) props += q + " ";
-    LOG(Message) << "Setting up " << type << " Fermion Flow on '" << par().gauge << "' Gauge Field and "  
-                 << props << ((par().props.size() > 1) ? "Fermion Propagators " : "Fermion Propagator ")
-                 << "with ppp" << ((par().bc < 0) ? "a" : "p") << " boundary conditions and "
+    
+    // Determine field types for logging
+    std::vector<std::string> fieldTypes;
+    if (par().propTypes.empty()) {
+        fieldTypes.resize(par().props.size(), par().defaultType);
+    } else {
+        fieldTypes = par().propTypes;
+    }
+
+    LOG(Message) << "Setting up " << type << " Field Flow on '" << par().gauge << "' Gauge Field and "
+                 << props << "with " << par().props.size() << " field" 
+                 << ((par().props.size() > 1) ? "s" : "")
+                 << " with ppp" << ((par().bc < 0) ? "a" : "p") << " boundary conditions and "
                  << par().steps << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
 
     if ((par().outProps.size() != par().props.size()) && !par().outProps.empty()) {
         HADRONS_ERROR(Argument, "outProps should either be empty or be the same size as props");
+    }
+
+    // Validate field types and separate into parallel vectors
+    std::vector<std::string> fermionFieldNames;
+    std::vector<std::string> propFieldNames;
+    
+    for (size_t i = 0; i < par().props.size(); i++) {
+        std::string q = par().props[i];
+        std::string type = fieldTypes[i];
+        if (type == "FermionField") {
+            fermionFieldNames.push_back(q);
+        } else if (type == "PropagatorField") {
+            propFieldNames.push_back(q);
+        } else {
+            HADRONS_ERROR(Argument, "Unknown field type: " + type);
+        }
     }
 
     // set boundary conditions for gauge field
@@ -190,27 +265,33 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
 
     auto &out     = envGet(HadronsSerializable, getName());
     auto &Uresult = out.template hold<GaugeResult>();
-    envGetTmp(EvolutionType, evolve);
+    envTmp(EvolutionType, evolve);
 
     auto &U   = envGet(GaugeField, par().gauge);
     auto &Uwf = envGet(GaugeField, getName()+"_U");
     Uwf = U;
 
-    for (std::string q : par().props) {
-        auto &qj = envGet(PropagatorField, q);
-        PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
+    // Initialize all flowed fields (both FermionField and PropagatorField)
+    for (const auto& q : fermionFieldNames) {
+        auto &qj = envGet(FERMION_FIELD, q);
+        FERMION_FIELD &qjwf = *env().template getObject<FERMION_FIELD>(getName()+"_tmp_"+q+"_wf");
+        qjwf = qj;
+    }
+    for (const auto& q : propFieldNames) {
+        auto &qj = envGet(PROPAGATOR_FIELD, q);
+        PROPAGATOR_FIELD &qjwf = *env().template getObject<PROPAGATOR_FIELD>(getName()+"_tmp_"+q+"_wf");
         qjwf = qj;
     }
     
     // apply flow equations
     double flowt = 0.0;
-    // Evolution<FlowAction> evolve(3.0, par().step_size, -1.0, par().step_size);
     evolve.gauge_status(Uwf,Uresult,flowt);
+    
     for (unsigned int step = 1; step <= par().steps; step++) {
         flowt += evolve.epsilon;
         std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << flowt;
 
-        // evolve gauge field 
+        // evolve gauge field ONCE for all fields
         startTimer("gauge field flow time "+ftt.str());
         std::vector<GaugeField> &Wi = evolve.evolve_gaugeFF(Uwf,bc);
         stopTimer("gauge field flow time "+ftt.str());
@@ -218,21 +299,43 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         // measure gauge observables
         evolve.gauge_status(Uwf,Uresult,flowt);
 
-        // evolve propagators
-        for (int i = 0; i < par().props.size(); i++) {
-            std::string q = par().props[i];
-            PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
-            startTimer("propagator "+q+" flow time "+ftt.str());
+        // Flow ALL FermionFields with shared gauge stages
+        for (const auto& q : fermionFieldNames) {
+            FERMION_FIELD &qjwf = *env().template getObject<FERMION_FIELD>(getName()+"_tmp_"+q+"_wf");
+            startTimer("FermionField "+q+" flow time "+ftt.str());
             evolve.laplace_flow(Wi[0],Wi[1],Wi[2],qjwf);
-            stopTimer("propagator "+q+" flow time "+ftt.str());
-            if (( step % par().meas_interval == 0) || (step == par().steps)) {
-                std::string qo;
-                if (par().outProps.empty()) {
-                    qo = q+"_t"+ftt.str();
-                } else {
-                    qo = par().outProps[i];
-                }
-                auto &qji = envGet(PropagatorField, qo);
+            stopTimer("FermionField "+q+" flow time "+ftt.str());
+        }
+        
+        // Flow ALL PropagatorFields with shared gauge stages
+        for (const auto& q : propFieldNames) {
+            PROPAGATOR_FIELD &qjwf = *env().template getObject<PROPAGATOR_FIELD>(getName()+"_tmp_"+q+"_wf");
+            startTimer("PropagatorField "+q+" flow time "+ftt.str());
+            evolve.laplace_flow(Wi[0],Wi[1],Wi[2],qjwf);
+            stopTimer("PropagatorField "+q+" flow time "+ftt.str());
+        }
+
+        // Save outputs at measurement intervals
+        if (( step % par().meas_interval == 0) || (step == par().steps)) {
+            std::string suffix = "_t"+ftt.str();
+            for (size_t j = 0; j < fermionFieldNames.size(); j++) {
+                std::string q = fermionFieldNames[j];
+                // Find global index in original props list
+                auto it = std::find(par().props.begin(), par().props.end(), q);
+                size_t globalIdx = std::distance(par().props.begin(), it);
+                std::string qo = par().outProps.empty() ? q + suffix : par().outProps[globalIdx];
+                auto &qji = envGet(FERMION_FIELD, qo);
+                FERMION_FIELD &qjwf = *env().template getObject<FERMION_FIELD>(getName()+"_tmp_"+q+"_wf");
+                qji = qjwf;
+            }
+            for (size_t j = 0; j < propFieldNames.size(); j++) {
+                std::string q = propFieldNames[j];
+                // Find global index in original props list
+                auto it = std::find(par().props.begin(), par().props.end(), q);
+                size_t globalIdx = std::distance(par().props.begin(), it);
+                std::string qo = par().outProps.empty() ? q + suffix : par().outProps[globalIdx];
+                auto &qji = envGet(PROPAGATOR_FIELD, qo);
+                PROPAGATOR_FIELD &qjwf = *env().template getObject<PROPAGATOR_FIELD>(getName()+"_tmp_"+q+"_wf");
                 qji = qjwf;
             }
         }
