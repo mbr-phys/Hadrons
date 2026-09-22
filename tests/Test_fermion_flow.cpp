@@ -84,28 +84,108 @@ int main(int argc, char *argv[])
     std::vector<std::string> results = {"meson_t0.00"}; // collect names of results to be written to file
     
     // ///////////////////////////////////////////////////////////////////////
-    // gradient flow on propagator ///////////////////////////////////////////
-    MGradientFlow::WilsonFermionFlow::Par wfPar;
-    wfPar.gauge = "gauge";
-    wfPar.steps = 10;                        // total number of evolution steps to perform
-    wfPar.step_size = 0.01;                  // size of one step in flow time/a^2
-    wfPar.meas_interval = 10;                // interval of steps at which to measure observables
-    wfPar.props = qName;                     // provide a list of propagators to be flowed
-    //wfPar.outProps = {"flowedquark1"};     // (optional) provide a list of names for the output propagators
-    wfPar.bc = -1;                           // set boundary conditions to anti-periodic in time (bc = 1 will keep periodic)
-    //wfPar.output = "GaugeFlow";            // option to output gauge flow data separately
-    application.createModule<MGradientFlow::WilsonFermionFlow>("FermionFlow",wfPar);
+    // POSITIVE FLOW: Flow both noise and solution 
+    // together in a single module execution. This shares gauge evolution
+    // across both field types, avoiding redundant gauge RK stage computation.
+    //
+    // For positive-flow bilinear estimators:
+    //   - eta: stochastic noise field 
+    //   - phi: solution D^-1 eta 
+    //   - Both are flowed forward with the same gauge trajectory
+    //   - Contraction: -eta_t^dagger A_t phi_t (scalar: A_t = 1)
     // ///////////////////////////////////////////////////////////////////////
     
-    // positive flow contractions
+    // Generate sparse Z2 stochastic noise 
+    // creates spin-color diagonal noise with nsparse dilution
+    unsigned int nsrc = 1;      // number of noise sources
+    unsigned int nsparse = 2;   // sparse dilution factor (2^4 = 16 dilutions)
+    std::string noiseBase = "eta";
+    
+    // create sparse spin-color diagonal noise
+    MNoise::SparseSpinColorDiagonal::Par sparsePar;
+    sparsePar.nsrc = nsrc;
+    sparsePar.nsparse = nsparse;
+    std::string sparseNoiseName = noiseBase + "_sparse";
+    application.createModule<MNoise::SparseSpinColorDiagonal>(sparseNoiseName, sparsePar);
+    
+    // apply Z2 dilution 
+    MSource::Z2Diluted::Par dilutedPar;
+    dilutedPar.noise = sparseNoiseName;
+    application.createModule<MSource::Z2Diluted>(noiseBase, dilutedPar);
+    
+    // unpack the diluted noise into individual sources
+    // The output is a vector of PropagatorField: eta_0_0, eta_0_1, ..., eta_0_(N-1)
+    unsigned int nDilutions = pow(nsparse, 4);  // 4D dilution
+    std::vector<std::string> etaNames(nDilutions);
+    MUtilities::PropagatorVectorUnpack::Par unpackPar;
+    unpackPar.input = noiseBase;
+    unpackPar.size = nDilutions;
+    std::string unpackName = noiseBase + "_unpacked";
+    application.createModule<MUtilities::PropagatorVectorUnpack>(unpackName, unpackPar);
+    
+    // Get the unpacked noise names
+    for (unsigned int i = 0; i < nDilutions; i++) {
+        etaNames[i] = unpackName + "_" + std::to_string(i);
+    }
+    
+    // For this test, just use the first noise source
+    std::string etaName = etaNames[0];
+    
+    // Solve for phi = D^-1 eta
+    MFermion::GaugeProp::Par phiPar;
+    phiPar.solver = "CG";
+    phiPar.source = etaName;
+    std::vector<std::string> phiName = {"phi_0"};
+    application.createModule<MFermion::GaugeProp>(phiName[0], phiPar);
+    
+    // Positive flow: flow eta, phi, AND the standard propagator Qpt_0 together
+    // This is the key efficiency win - gauge evolution happens ONCE for all fields
+    MGradientFlow::FermionFlow::Par positiveFlowPar;
+    positiveFlowPar.gauge = "gauge";
+    positiveFlowPar.steps = 10;
+    positiveFlowPar.step_size = 0.01;
+    positiveFlowPar.meas_interval = 10;
+    positiveFlowPar.props = {etaName, phiName[0], qName[0]};  // three fields together
+    positiveFlowPar.defaultType = "PropagatorField";          // homogeneous list
+    //positiveFlowPar.propTypes = {"PropagatorField", "PropagatorField", "PropagatorField"}; // alternatively define type of each object, e.g. if using FermionFields as well
+    positiveFlowPar.bc = -1;
+    application.createModule<MGradientFlow::FermionFlow>("PositiveFlow", positiveFlowPar);
+    
+    // Positive-flow contractions using new StochasticCondensate module
+    // Scalar condensate at flow time t=0.10
+    MContraction::StochasticCondensatePropagator::Par scalarPar;
+    scalarPar.eta = etaName + "_t0.10";
+    scalarPar.phi = phiName[0] + "_t0.10";
+    scalarPar.gamma = "Identity";
+    scalarPar.c_fl = 0.0;  // DWF action, chiral symmetry protects
+    application.createModule<MContraction::StochasticCondensatePropagator>("scalar_t0.10", scalarPar);
+    results.push_back("scalar_t0.10");
+    
+    // Derivative condensate for Z_chi (ringed scheme) using DslashField + StochasticCondensate
+    // Step 1: Apply D-slash to flowed phi
+    MContraction::DslashFieldPropagator::Par dslashPar;
+    dslashPar.input = phiName[0] + "_t0.10";
+    dslashPar.gauge = "PositiveFlow_U_t0.10";  // flowed gauge at same flow time
+    application.createModule<MContraction::DslashFieldPropagator>("Dslash_phi_t0.10", dslashPar);
+    
+    // Step 2: Contract eta with Dslash_phi
+    MContraction::StochasticCondensatePropagator::Par derivPar;
+    derivPar.eta = etaName + "_t0.10";
+    derivPar.phi = "Dslash_phi_t0.10";
+    derivPar.gamma = "Identity";
+    derivPar.c_fl = 0.0;  // no c_fl for derivative condensate
+    application.createModule<MContraction::StochasticCondensatePropagator>("deriv_condensate_t0.10", derivPar);
+    results.push_back("deriv_condensate_t0.10");
+    
+    // Flowed standard propagator contractions (for comparison with stochastic)
     MContraction::Meson::Par mesflowPar;
-    mesflowPar.q1     = qName[0]+"_t0.10";
-    mesflowPar.q2     = qName[0]+"_t0.10";
+    mesflowPar.q1     = qName[0]+"_t0.10";  // flowed standard propagator
+    mesflowPar.q2     = qName[0]+"_t0.10";  // flowed standard propagator
     mesflowPar.gammas = "all";
     mesflowPar.sink   = "sink";
-    application.createModule<MContraction::Meson>("meson_t0.10",mesflowPar);
-    results.push_back("meson_t0.10");
-
+    application.createModule<MContraction::Meson>("meson_std_t0.10",mesflowPar);
+    results.push_back("meson_std_t0.10");
+    
     // save data
     MIO::WriteResultGroup::Par wPar;
     wPar.results = results;

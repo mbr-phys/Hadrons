@@ -1,10 +1,9 @@
 /*
- * FermionFlow.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
+ * DslashField.cpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2015 - 2022
+ * Copyright (C) 2015 - 2026
  *
- * Author: Antonin Portelli <antonin.portelli@me.com>
- * Author: Matthew Black    <matthewkblack@protonmail.com>
+ * Author: Matthew Black <matthewkblack@protonmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,12 +23,12 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MGradientFlow/FermionFlow.hpp>
+#include <Hadrons/Modules/MContraction/DslashField.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MGradientFlow;
+using namespace MContraction;
 
-template class Grid::Hadrons::MGradientFlow::TFermionFlow<FIMPL,
-                                                           GIMPL,
-                                                           WilsonGaugeAction<GIMPL>>;
+// Explicit template instantiations for both field types
+template class Grid::Hadrons::MContraction::TDslashField<FIMPL::FermionField>;
+template class Grid::Hadrons::MContraction::TDslashField<FIMPL::PropagatorField>;
