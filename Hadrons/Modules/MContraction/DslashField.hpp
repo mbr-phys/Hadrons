@@ -64,11 +64,11 @@ public:
                                     std::string, output);
 };
 
-template <typename Field>
+template <typename FImpl, typename Field>
 class TDslashField: public Module<DslashFieldPar>
 {
 public:
-    FERM_TYPE_ALIASES(Field,);
+    FERM_TYPE_ALIASES(FImpl,);
 public:
     // constructor
     TDslashField(const std::string name);
@@ -88,31 +88,31 @@ private:
 };
 
 MODULE_REGISTER_TMP(DslashFieldFermion, 
-                    ARG(TDslashField<FIMPL::FermionField>), 
+                    ARG(TDslashField<FIMPL, FIMPL::FermionField>), 
                     MContraction);
 MODULE_REGISTER_TMP(DslashFieldPropagator, 
-                    ARG(TDslashField<FIMPL::PropagatorField>), 
+                    ARG(TDslashField<FIMPL, FIMPL::PropagatorField>), 
                     MContraction);
 
 /******************************************************************************
  *                       TDslashField implementation                          *
  ******************************************************************************/
 // constructor /////////////////////////////////////////////////////////////////
-template <typename Field>
-TDslashField<Field>::TDslashField(const std::string name)
+template <typename FImpl, typename Field>
+TDslashField<FImpl, Field>::TDslashField(const std::string name)
 : Module<DslashFieldPar>(name)
 {}
 
 // dependencies/products ///////////////////////////////////////////////////////
-template <typename Field>
-std::vector<std::string> TDslashField<Field>::getInput(void)
+template <typename FImpl, typename Field>
+std::vector<std::string> TDslashField<FImpl, Field>::getInput(void)
 {
     std::vector<std::string> in = {par().input, par().gauge};
     return in;
 }
 
-template <typename Field>
-std::vector<std::string> TDslashField<Field>::getOutput(void)
+template <typename FImpl, typename Field>
+std::vector<std::string> TDslashField<FImpl, Field>::getOutput(void)
 {
     std::string outName = par().output;
     if (outName.empty()) {
@@ -123,31 +123,31 @@ std::vector<std::string> TDslashField<Field>::getOutput(void)
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
-template <typename Field>
-void TDslashField<Field>::setup(void)
+template <typename FImpl, typename Field>
+void TDslashField<FImpl, Field>::setup(void)
 {
     std::string outName = par().output;
     if (outName.empty()) {
         outName = getName() + "_out";
     }
-    envCreateLat(FIELD_TYPE, outName);
+    envCreateLat(Field, outName);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
-template <typename Field>
-void TDslashField<Field>::execute(void)
+template <typename FImpl, typename Field>
+void TDslashField<FImpl, Field>::execute(void)
 {
     LOG(Message) << "Computing Dslash on '" << par().input 
                  << "' using gauge field '" << par().gauge << "'." << std::endl;
 
-    auto &in = envGet(FIELD_TYPE, par().input);
+    auto &in = envGet(Field, par().input);
     auto &U = envGet(GaugeField, par().gauge);
     
     std::string outName = par().output;
     if (outName.empty()) {
         outName = getName() + "_out";
     }
-    auto &out = envGet(FIELD_TYPE, outName);
+    auto &out = envGet(Field, outName);
     
     // Compute Dslash = gamma^mu D_mu (symmetric covariant derivative)
     computeDslash(out, in, U);
@@ -156,8 +156,8 @@ void TDslashField<Field>::execute(void)
 }
 
 // helper: compute Dslash //////////////////////////////////////////////////////
-template <typename Field>
-void TDslashField<Field>::computeDslash(Field &out, const Field &in, const GaugeField &U)
+template <typename FImpl, typename Field>
+void TDslashField<FImpl, Field>::computeDslash(Field &out, const Field &in, const GaugeField &U)
 {
     // Dslash ψ(x) = ½ Σ_μ γ_μ [U_μ(x) ψ(x+μ) - U†_μ(x-μ) ψ(x-μ)]
     // This follows the NPRUtils::dslash convention
