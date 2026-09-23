@@ -29,6 +29,5 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MContraction;
 
-// Explicit template instantiations for both field types
 template class Grid::Hadrons::MContraction::TStochasticCondensate<FIMPL, FIMPL::FermionField>;
 template class Grid::Hadrons::MContraction::TStochasticCondensate<FIMPL, FIMPL::PropagatorField>;

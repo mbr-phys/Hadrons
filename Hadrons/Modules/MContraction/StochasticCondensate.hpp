@@ -36,7 +36,7 @@ BEGIN_HADRONS_NAMESPACE
 /*
  * Stochastic condensate from noise-source contractions
  * ----------------------------------------------------
- * Computes: -⟨eta^dagger Gamma phi⟩ + c_fl ⟨eta^dagger eta⟩ (c_fl only for scalar channel)
+ * Computes: -⟨eta^dagger Gamma phi⟩ + c_fl ⟨eta^dagger eta⟩ (c_fl only for scalar channel at positive GF time)
  * 
  * Parameters:
  * - eta: noise field (FermionField or PropagatorField)
@@ -44,8 +44,7 @@ BEGIN_HADRONS_NAMESPACE
  * - gamma: gamma matrix insertion (default: "Identity")
  * - c_fl: flow-time O(a) improvement coefficient (default: 0; only used for gamma="Identity")
  * 
- * Use cases:
- * - Scalar condensate: gamma="Identity", c_fl=0.5 (Wilson) or 0 (DWF)
+ * - Scalar condensate: gamma="Identity", c_fl=0.5 (tree-level Wilson) or 0 (DWF)
  * - Pseudoscalar: gamma="Gamma5", c_fl=0
  * - Derivative condensate: use DslashField first, then gamma="Identity"
  */
@@ -155,7 +154,6 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
     
     Gamma G(par().gamma);
     
-    // Compute -eta^dagger * Gamma * phi with all spin-colour indices contracted
     LatticeComplex integrand = -localInnerProduct(eta, closure(G * phi));
     
     // Add c_fl term only for scalar channel (gamma = Identity)
@@ -166,10 +164,8 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
         LOG(Warning) << "c_fl term ignored for non-scalar gamma structure" << std::endl;
     }
     
-    // Volume sum
     Complex condensate = TensorRemove(sum(integrand));
     
-    // Save result
     Result result;
     result.gamma = par().gamma;
     result.c_fl = par().c_fl;
