@@ -23,8 +23,8 @@
  */
 
 /*  END LEGAL */
-#ifndef Hadrons_MContraction_DslashField_hpp_
-#define Hadrons_MContraction_DslashField_hpp_
+#ifndef Hadrons_MUtilities_DslashField_hpp_
+#define Hadrons_MUtilities_DslashField_hpp_
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -37,23 +37,18 @@ BEGIN_HADRONS_NAMESPACE
  * Covariant derivative operator Dslash = gamma^mu D_mu
  * ----------------------------------------------------
  * Applies the symmetric covariant derivative to a fermion field:
- *   Dslash ψ(x) = ½ Σ_μ γ_μ [U_μ(x) ψ(x+μ) - U†_μ(x-μ) ψ(x-μ)]
+ *   Dslash psi(x) = 1/2 sum_mu gamma_mu [U_mu(x) psi(x+mu) - U^dagger_mu(x-mu) psi(x-mu)]
  * 
  * Parameters:
  * - input: input field (FermionField or PropagatorField)
  * - gauge: gauge field at same flow time as input
  * - output: name for output field (default: <name>_out)
- * 
- * Use cases:
- * - Ringed-scheme Z_χ normalization: Dslash on flowed fields
- * - Derivative condensates: ⟨χ̄ Dslash χ⟩
- * - NPR renormalization: momentum-space vertex functions
  */
 
 /******************************************************************************
  *                            TDslashField                                    *
  ******************************************************************************/
-BEGIN_MODULE_NAMESPACE(MContraction)
+BEGIN_MODULE_NAMESPACE(MUtilities)
 
 class DslashFieldPar: Serializable
 {
@@ -89,10 +84,10 @@ private:
 
 MODULE_REGISTER_TMP(DslashFieldFermion, 
                     ARG(TDslashField<FIMPL, FIMPL::FermionField>), 
-                    MContraction);
+                    MUtilities);
 MODULE_REGISTER_TMP(DslashFieldPropagator, 
                     ARG(TDslashField<FIMPL, FIMPL::PropagatorField>), 
-                    MContraction);
+                    MUtilities);
 
 /******************************************************************************
  *                       TDslashField implementation                          *
@@ -159,27 +154,20 @@ void TDslashField<FImpl, Field>::execute(void)
 template <typename FImpl, typename Field>
 void TDslashField<FImpl, Field>::computeDslash(Field &out, const Field &in, const GaugeField &U)
 {
-    // Dslash ψ(x) = ½ Σ_μ γ_μ [U_μ(x) ψ(x+μ) - U†_μ(x-μ) ψ(x-μ)]
+    // Dslash psi(x) = 1/2 sum_mu gamma_mu [U_mu(x) psi(x+mu) - U^dagger_mu(x-mu) psi(x-mu)]
     // This follows the NPRUtils::dslash convention
     
     out = Zero();
     Field tmp(in.Grid());
     
     for (int mu = 0; mu < Nd; mu++) {
-        // Get gauge link in direction mu
         auto U_mu = peekLorentz(U, mu);
         
-        // Forward covariant shift: U_μ(x) ψ(x+μ)
         tmp = FImpl::CovShiftForward(U_mu, mu, in);
-        
-        // Backward covariant shift: U†_μ(x-μ) ψ(x-μ)
         tmp = tmp - FImpl::CovShiftBackward(U_mu, mu, in);
-        
-        // Multiply by gamma_μ and accumulate
         out += Gamma::gmu[mu] * tmp;
     }
     
-    // Symmetric derivative factor: ½
     out = 0.5 * out;
 }
 
@@ -187,4 +175,4 @@ END_MODULE_NAMESPACE
 
 END_HADRONS_NAMESPACE
 
-#endif // Hadrons_MContraction_DslashField_hpp_
+#endif // Hadrons_MUtilities_DslashField_hpp_
