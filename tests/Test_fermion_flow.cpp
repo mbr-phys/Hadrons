@@ -17,7 +17,6 @@ int main(int argc, char *argv[])
     
     // run setup ///////////////////////////////////////////////////////////////
     Application              application;
-    double        mass    = .25;
     
     // global parameters
     Application::GlobalPar globalPar;
@@ -28,7 +27,7 @@ int main(int argc, char *argv[])
     globalPar.genetic.maxGen       = 1000;
     globalPar.genetic.maxCstGen    = 200;
     globalPar.genetic.popSize      = 20;
-    globalPar.genetic.mutationRate = .1;
+    globalPar.genetic.mutationRate = 0.1;
     application.setPar(globalPar);
     
     // gauge field
@@ -54,7 +53,7 @@ int main(int argc, char *argv[])
     actionPar.gauge = "gauge";
     actionPar.Ls    = 12;
     actionPar.M5    = 1.8;
-    actionPar.mass  = mass;
+    actionPar.mass  = 0.25;
     actionPar.boundary = boundary;
     actionPar.twist = twist;
     application.createModule<MAction::DWF>("DWF", actionPar);
@@ -84,9 +83,7 @@ int main(int argc, char *argv[])
     std::vector<std::string> results = {"meson_t0.00"}; // collect names of results to be written to file
     
     // ///////////////////////////////////////////////////////////////////////
-    // POSITIVE FLOW: Flow both noise and solution 
-    // together in a single module execution. This shares gauge evolution
-    // across both field types, avoiding redundant gauge RK stage computation.
+    // Flow both noise and solution together in a single module execution. 
     //
     // For positive-flow bilinear estimators:
     //   - eta: stochastic noise field 
@@ -163,11 +160,11 @@ int main(int argc, char *argv[])
     
     // Derivative condensate for Z_chi (ringed scheme) using DslashField + StochasticCondensate
     // Step 1: Apply D-slash to flowed phi
-    MContraction::DslashFieldPropagator::Par dslashPar;
+    MUtilities::DslashFieldPropagator::Par dslashPar;
     dslashPar.input = phiName[0] + "_t0.10";
     dslashPar.gauge = "PositiveFlow_U";  // flowed gauge at same flow time
     dslashPar.output = "slashed_phi_t0.10";
-    application.createModule<MContraction::DslashFieldPropagator>("Dslash_phi_t0.10", dslashPar);
+    application.createModule<MUtilities::DslashFieldPropagator>("Dslash_phi_t0.10", dslashPar);
     
     // Step 2: Contract eta with Dslash_phi
     MContraction::StochasticCondensatePropagator::Par derivPar;

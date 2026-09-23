@@ -17,7 +17,6 @@ int main(int argc, char *argv[])
     
     // run setup ///////////////////////////////////////////////////////////////
     Application              application;
-    double        mass    = .25;
     
     // global parameters
     Application::GlobalPar globalPar;
@@ -28,7 +27,7 @@ int main(int argc, char *argv[])
     globalPar.genetic.maxGen       = 1000;
     globalPar.genetic.maxCstGen    = 200;
     globalPar.genetic.popSize      = 20;
-    globalPar.genetic.mutationRate = .1;
+    globalPar.genetic.mutationRate = 0.1;
     application.setPar(globalPar);
     
     // gauge field
@@ -54,7 +53,7 @@ int main(int argc, char *argv[])
     actionPar.gauge = "gauge";
     actionPar.Ls    = 12;
     actionPar.M5    = 1.8;
-    actionPar.mass  = mass;
+    actionPar.mass  = 0.25;
     actionPar.boundary = boundary;
     actionPar.twist = twist;
     application.createModule<MAction::DWF>("DWF", actionPar);
