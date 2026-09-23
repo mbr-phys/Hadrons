@@ -23,12 +23,11 @@
  */
 
 /*  END LEGAL */
-#include <Hadrons/Modules/MContraction/DslashField.hpp>
+#include <Hadrons/Modules/MUtilities/DslashField.hpp>
 
 using namespace Grid;
 using namespace Hadrons;
-using namespace MContraction;
+using namespace MUtilities;
 
-// Explicit template instantiations for both field types
-template class Grid::Hadrons::MContraction::TDslashField<FIMPL, FIMPL::FermionField>;
-template class Grid::Hadrons::MContraction::TDslashField<FIMPL, FIMPL::PropagatorField>;
+template class Grid::Hadrons::MUtilities::TDslashField<FIMPL, FIMPL::FermionField>;
+template class Grid::Hadrons::MUtilities::TDslashField<FIMPL, FIMPL::PropagatorField>;
