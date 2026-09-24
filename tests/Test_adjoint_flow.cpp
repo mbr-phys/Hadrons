@@ -18,6 +18,18 @@ int main(int argc, char *argv[])
     // run setup
     Application application;
     
+    // global parameters
+    Application::GlobalPar globalPar;
+    globalPar.trajCounter.start    = 1500;
+    globalPar.trajCounter.end      = 1520;
+    globalPar.trajCounter.step     = 20;
+    globalPar.runId                = "test";
+    globalPar.genetic.maxGen       = 1000;
+    globalPar.genetic.maxCstGen    = 200;
+    globalPar.genetic.popSize      = 20;
+    globalPar.genetic.mutationRate = 0.1;
+    application.setPar(globalPar);
+    
     // gauge field
     application.createModule<MGauge::Random>("gauge");
 
