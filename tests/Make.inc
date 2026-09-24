@@ -1,4 +1,4 @@
-tests-local: Test_QED_Local Test_QED Test_diskvector Test_exact_distil Test_propagator_flow Test_fermion_flow Test_free_prop Test_gradient_flow Test_hadrons_meson_3pt Test_hadrons_spectrum Test_sigma_to_nucleon Test_stoch_distil Test_xi_to_sigma
+tests-local: Test_QED_Local Test_QED Test_diskvector Test_exact_distil Test_adjoint_flow Test_propagator_flow Test_fermion_flow Test_free_prop Test_gradient_flow Test_hadrons_meson_3pt Test_hadrons_spectrum Test_sigma_to_nucleon Test_stoch_distil Test_xi_to_sigma
 EXTRA_PROGRAMS = Test_QED_Local Test_QED Test_diskvector Test_exact_distil Test_propagator_flow Test_fermion_flow Test_free_prop Test_gradient_flow Test_hadrons_meson_3pt Test_hadrons_spectrum Test_sigma_to_nucleon Test_stoch_distil Test_xi_to_sigma
 
 Test_QED_Local_SOURCES=Test_QED.cc
@@ -12,6 +12,9 @@ Test_diskvector_LDADD=-lHadrons -lGrid
 
 Test_exact_distil_SOURCES=Test_exact_distil.cc
 Test_exact_distil_LDADD=-lHadrons -lGrid
+
+Test_adjoint_flow_SOURCES=Test_adjoint_flow.cpp
+Test_adjoint_flow_LDADD=-lHadrons -lGrid
 
 Test_propagator_flow_SOURCES=Test_propagator_flow.cc
 Test_propagator_flow_LDADD=-lHadrons -lGrid
@@ -40,5 +43,4 @@ Test_stoch_distil_LDADD=-lHadrons -lGrid
 Test_xi_to_sigma_SOURCES=Test_xi_to_sigma.cc
 Test_xi_to_sigma_LDADD=-lHadrons -lGrid
 
-CLEANFILES = Test_QED_Local Test_QED Test_diskvector Test_exact_distil Test_propagator_flow Test_fermion_flow Test_free_prop Test_gradient_flow Test_hadrons_meson_3pt Test_hadrons_spectrum Test_sigma_to_nucleon Test_stoch_distil Test_xi_to_sigma
-
+CLEANFILES = Test_QED_Local Test_QED Test_diskvector Test_exact_distil Test_adjoint_flow Test_propagator_flow Test_fermion_flow Test_free_prop Test_gradient_flow Test_hadrons_meson_3pt Test_hadrons_spectrum Test_sigma_to_nucleon Test_stoch_distil Test_xi_to_sigma

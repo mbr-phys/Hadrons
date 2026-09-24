@@ -44,6 +44,8 @@ int main(int argc, char *argv[])
     gfPar.steps = 10;                     // total number of evolution steps to perform
     gfPar.step_size = 0.01;               // size of one step in flow time/a^2
     gfPar.meas_interval = 1;              // interval of steps at which to measure observables
+    gfPar.save_history = false;           // no gauge snapshots needed by this test
+    gfPar.save_rk_stages = false;         // no RK-stage snapshots needed by this test
     gfPar.output = "WilsonFlow";         
     application.createModule<MGradientFlow::WilsonFlow>("WilsonFlow",gfPar);
     // ////////////////////////////////////////////////////////////////////////
