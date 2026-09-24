@@ -88,7 +88,7 @@ public:
 };
 
 MODULE_REGISTER_TMP(FermionFlow,
-                    ARG(TFermionFlow<FIMPL, GIMPL, WilsonGaugeAction<GIMPL>>),
+                    ARG(TFermionFlow<FIMPL, GIMPL, WilsonAction<GIMPL>>),
                     MGradientFlow);
 
 /******************************************************************************
@@ -142,6 +142,10 @@ std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getOutput(void)
 template <typename FImpl, typename GImpl, typename FlowAction>
 void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
 {
+    if (par().bc != -1 && par().bc != 1) {
+        HADRONS_ERROR(Argument, "bc must be either +1 (periodic) or -1 (antiperiodic)");
+    }
+
     envCreateLat(GaugeField, getName()+"_U");
 
     // Validate props and propTypes
@@ -270,9 +274,7 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
     }
 
     // set boundary conditions for gauge field
-    std::vector<int> bc = {1,1,1};
-    if (par().bc < 0) bc.push_back(-1);
-    else bc.push_back(1);
+    std::vector<int> bc = {1, 1, 1, par().bc};
 
     auto &out     = envGet(HadronsSerializable, getName());
     auto &Uresult = out.template hold<GaugeResult>();

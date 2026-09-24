@@ -50,6 +50,23 @@ public:
                                     std::vector<ComplexD>,  polyakovT);
 };
 
+// Wilson flow implemented through the padded plaquette/rectangle force path.
+// With c1 = 0 this is PlaqPlusRectangleAction(beta, 0).
+template <class GImpl>
+class WilsonAction : public RBCGaugeAction<GImpl> {
+public:
+    INHERIT_GIMPL_TYPES(GImpl);
+
+    WilsonAction(RealD beta)
+    : RBCGaugeAction<GImpl>(beta, 0.0)
+    {}
+
+    virtual std::string action_name()
+    {
+        return "WilsonAction";
+    }
+};
+
 // additional action(s) /////////////////////////////////////////////////////
 template <class GImpl>
 class ZeuthenGaugeAction {
@@ -121,8 +138,8 @@ class Evolution {
         GridBase *grid_;
         GaugeLinkField linkBuf_;
         GaugeField zBuf1_, zBuf2_, uBuf1_, uBuf2_;
-        std::vector<GaugeField> Wi_;
         TimerArray &timer_;
+        std::vector<GaugeField> Wi_;
 
     public:
         double epsilon, maxTau, taus;
@@ -132,15 +149,19 @@ class Evolution {
         Evolution(GridBase *grid, double beta, double step, double mTau, double ts, TimerArray *timer = nullptr) 
         : SG(FlowAction(beta)), epsilon(step), maxTau(mTau), taus(ts)
         , grid_(grid), linkBuf_(grid), zBuf1_(grid), zBuf2_(grid)
-        , uBuf1_(grid), uBuf2_(grid), Wi_(5, grid), timer_(*timer)
-        {};
+        , uBuf1_(grid), uBuf2_(grid), timer_(*timer)
+        {
+            Wi_.resize(5, grid);
+        }
 
         // constructor with c_plaq, c_rect
         Evolution(GridBase *grid, double c_plaq, double c_rect, double step, double mTau, double ts, TimerArray *timer = nullptr) 
         : SG(FlowAction(c_plaq, c_rect)), epsilon(step), maxTau(mTau), taus(ts)
         , grid_(grid), linkBuf_(grid), zBuf1_(grid), zBuf2_(grid)
-        , uBuf1_(grid), uBuf2_(grid), Wi_(5, grid), timer_(*timer)
-        {};
+        , uBuf1_(grid), uBuf2_(grid), timer_(*timer)
+        {
+            Wi_.resize(5, grid);
+        }
 
         // clover //////////////////////////////////////////////////////////////////////
         void siteClover(ComplexField &Clov, const GaugeField &U)
@@ -258,9 +279,10 @@ class Evolution {
             epsilon = epsilon*0.95*std::pow(1e-4/diff,1./3.);
         };
 
-        void evolve_gauge(GaugeField &U) {
+        std::vector<GaugeField> & evolve_gauge(GaugeField &U) {
             gauge_RK(U);
             U = Wi_[3];
+            return Wi_;
         };
         
         void evolve_gauge_adaptive(GaugeField &U) {
@@ -309,6 +331,33 @@ class Evolution {
             Field psi3 = psi1 + (3.0*epsilon/4.0)*generic_laplace(0.0, 1.0, W2, psi2, -1);
 
             field = psi3;
+        };
+
+        // Adjoint (backward) fermion flow using reverse RK stepping
+        // Implements: (delta_s + Delta_s) xi(tau;s) = 0, flowing from s+eps to s
+        // Formula (reverse Hermitian adjoint of forward RK):
+        //   lambda_3 = xi_{s+eps}
+        //   lambda_2 = 3/4 Delta_2 lambda_3
+        //   lambda_1 = lambda_3 + 8/9 Delta_1 lambda_2
+        //   lambda_0 = lambda_1 + lambda_2 + 1/4 Delta_0(lambda_1 - 8/9 lambda_2)
+        //   xi_s = lambda_0
+        template <typename Field>
+        void adjoint_laplace_flow(GaugeField &W0, GaugeField &W1, GaugeField &W2, Field &xi) {
+            // lambda_3 = xi_{s+eps} (input)
+            Field lambda3 = xi;
+
+            // lambda_2 = 3/4 Delta_2 lambda_3
+            Field lambda2 = (3.0*epsilon/4.0)*generic_laplace(0.0, 1.0, W2, lambda3, -1);
+
+            // lambda_1 = lambda_3 + 8/9 Delta_1 lambda_2
+            Field lambda1 = lambda3 + (8.0*epsilon/9.0)*generic_laplace(0.0, 1.0, W1, lambda2, -1);
+
+            // lambda_0 = lambda_1 + lambda_2+ 1/4 Delta_0(lambda_1 - 8/9 lambda_2)
+            Field tmp = lambda1 - 8.0/9.0*lambda2;
+            Field lambda0 = lambda1 + lambda2 + (epsilon/4.0)*generic_laplace(0.0, 1.0, W0, tmp, -1);
+
+            // xi_s = lambda_0 (output)
+            xi = lambda0;
         };
 
         std::vector<GaugeField> & evolve_gaugeFF(GaugeField &U, std::vector<int> &bc) {

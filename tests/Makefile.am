@@ -11,6 +11,7 @@ EXTRA_PROGRAMS = \
   Test_exact_distil         \
   Test_propagator_flow		\
   Test_fermion_flow			\
+  Test_adjoint_flow         \
   Test_field_io             \
   Test_free_prop            \
   Test_gradient_flow		\
@@ -52,6 +53,9 @@ Test_propagator_flow_LDADD=-lHadrons -lGrid
 
 Test_fermion_flow_SOURCES=Test_fermion_flow.cpp
 Test_fermion_flow_LDADD=-lHadrons -lGrid
+
+Test_adjoint_flow_SOURCES=Test_adjoint_flow.cpp
+Test_adjoint_flow_LDADD=-lHadrons -lGrid
 
 Test_field_io_SOURCES=Test_field_io.cpp
 Test_field_io_LDADD=-lHadrons -lGrid
