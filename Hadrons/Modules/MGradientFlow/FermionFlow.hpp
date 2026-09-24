@@ -152,6 +152,9 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
     if (!par().propTypes.empty() && (par().props.size() != par().propTypes.size())) {
         HADRONS_ERROR(Argument, "propTypes must be empty or have the same size as props");
     }
+    if (!par().outProps.empty() && (par().props.size() != par().outProps.size())) {
+        HADRONS_ERROR(Argument, "outProps must be empty or have the same size as props");
+    }
 
     // Determine field types for each prop
     std::vector<std::string> fieldTypes;
@@ -197,21 +200,15 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
                     }
                 }
             } else {
-                for (std::string q : par().outProps) {
-                    // Infer type from input props
-                    auto it = std::find(par().props.begin(), par().props.end(), q);
-                    if (it != par().props.end()) {
-                        size_t idx = std::distance(par().props.begin(), it);
-                        std::string type = fieldTypes[idx];
-                        if (type == "FermionField") {
-                            envCreateLat(FermionField, q);
-                        } else if (type == "PropagatorField") {
-                            envCreateLat(PropagatorField, q);
-                        } else {
-                            HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                        }
+                for (size_t j = 0; j < par().outProps.size(); j++) {
+                    std::string q = par().outProps[j];
+                    std::string type = fieldTypes[j];
+                    if (type == "FermionField") {
+                        envCreateLat(FermionField, q);
+                    } else if (type == "PropagatorField") {
+                        envCreateLat(PropagatorField, q);
                     } else {
-                        HADRONS_ERROR(Argument, "outProp " + q + " not found in props");
+                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
                     }
                 }
             }
@@ -252,10 +249,6 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
                  << ((par().props.size() > 1) ? "s" : "")
                  << " with ppp" << ((par().bc < 0) ? "a" : "p") << " boundary conditions and "
                  << par().steps << " step" << ((par().steps > 1) ? "s." : ".") << std::endl;
-
-    if ((par().outProps.size() != par().props.size()) && !par().outProps.empty()) {
-        HADRONS_ERROR(Argument, "outProps should either be empty or be the same size as props");
-    }
 
     // Validate field types and separate into parallel vectors
     std::vector<std::string> fermionFieldNames;
