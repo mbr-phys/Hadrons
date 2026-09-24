@@ -30,6 +30,4 @@ using namespace Grid;
 using namespace Hadrons;
 using namespace MGradientFlow;
 
-template class Grid::Hadrons::MGradientFlow::TFermionFlow<FIMPL,
-                                                           GIMPL,
-                                                           WilsonGaugeAction<GIMPL>>;
+template class Grid::Hadrons::MGradientFlow::TFermionFlow<FIMPL,GIMPL,WilsonAction<GIMPL>>;
