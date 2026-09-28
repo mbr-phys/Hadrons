@@ -305,9 +305,10 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
             // conjugated, while the sink gamma is not.
             // P = sum_{y, y0=sourceTime} etaA^dag adj(Gamma_source) gamma5 phi2B.
             source = adj(etaA) * adj(gSrc) * g5 * phi2B;
-            // This locates the source operator at sourceTime
+            // This locates the flowed source operator at sourceTime; it does
+            // not restrict the temporal smearing already contained in its fields.
             source = where(time == static_cast<int>(par().sourceTime), source, 0.*source);
-            auto P = TensorRemove(sum(source));
+            auto P = sum(source);
 
             // Q = etaB^dag g5 Gamma_sink phi1A.  This preserves the
             // phi * eta^dag * phi * eta^dag ordering of the estimator.
