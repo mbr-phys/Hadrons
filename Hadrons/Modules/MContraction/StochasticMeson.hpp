@@ -40,17 +40,19 @@ BEGIN_HADRONS_NAMESPACE
  * Computes connected two-point function with bilinears:
  * 
  *   C_{Gamma1 Gamma2}(t) = sum_{x,y} tr[
- *       Gamma1 * (phi_A * eta_A^dag)(t,x; t0,y) *
- *       Gamma2 * (phi_B * eta_B^dag)(t0,y; t,x)
+ *       (gamma5 Gamma1) * (phi_1A * eta_A^dag)(t,x; t0,y) *
+ *       (Gamma2^dag gamma5) * (eta_B * phi_2B^dag)(t0,y; t,x)
  *   ]
  * 
- * For independent noise fields eta_A and eta_B, the local factors are
- *   P(y) = eta_A(y)^dag Gamma_source^dag gamma5 phi_2B(y),
- *   Q(x) = eta_B(x)^dag gamma5 Gamma_sink phi_1A(x).
- * Their colour-spin trace is cyclically identical to the conventional
- * phi * eta^dag * phi * eta^dag stochastic meson contraction.
+ * The reverse-oriented second line is represented with gamma5 hermiticity.
+ * For independent wall-noise fields eta_A and eta_B, the local factors are
+ *   P(y) = eta_A(y)^dag Gamma_source^dag gamma5 eta_B(y),
+ *   Q(x) = phi_2B(x)^dag gamma5 Gamma_sink phi_1A(x).
+ * This keeps both noise factors at the source and both solution fields at
+ * the sink, so the estimator has a nonzero zero-flow wall-source limit.
  * P is summed over space on the explicitly supplied source time slice; Q is
- * projected by the supplied MSink object and stored versus t - sourceTime.
+ * projected by the supplied MSink object and stored at absolute sink time,
+ * following Meson.hpp.
  * 
  * Parameters:
  * - phi1A: solution field for flavour 1, noise A
@@ -61,6 +63,7 @@ BEGIN_HADRONS_NAMESPACE
  * - sink:   spatial momentum projector (MSink module name)
  * - sourceTime: centre time of the source bilinear
  * - noiseA/noiseB: labels from one common per-source-time noise pool
+ * - flowTime: fermion flow time recorded with the result
  * - output: output file stem
  * 
  * The module computes one noise pair (A,B) per invocation.
@@ -84,6 +87,7 @@ public:
                                     unsigned int, sourceTime,
                                     unsigned int, noiseA,
                                     unsigned int, noiseB,
+                                    double, flowTime,
                                     std::string, output);
 };
 
@@ -262,6 +266,7 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
         result[i].source_time = par().sourceTime;
         result[i].noise_a = par().noiseA;
         result[i].noise_b = par().noiseB;
+        result[i].flow_time = par().flowTime;
     }
     
     // Get input fields
@@ -303,16 +308,16 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
 
             // This follows Meson.hpp: the source bilinear is Hermitian
             // conjugated, while the sink gamma is not.
-            // P = sum_{y, y0=sourceTime} etaA^dag adj(Gamma_source) gamma5 phi2B.
-            source = adj(etaA) * adj(gSrc) * g5 * phi2B;
+            // P = sum_{y, y0=sourceTime} etaA^dag adj(Gamma_source) gamma5 etaB.
+            source = adj(etaA) * adj(gSrc) * g5 * etaB;
             // This locates the flowed source operator at sourceTime; it does
             // not restrict the temporal smearing already contained in its fields.
             source = where(time == static_cast<int>(par().sourceTime), source, 0.*source);
             auto P = sum(source);
 
-            // Q = etaB^dag g5 Gamma_sink phi1A.  This preserves the
-            // phi * eta^dag * phi * eta^dag ordering of the estimator.
-            c = trace(adj(etaB) * g5 * gSnk * phi1A * P);
+            // Q = phi2B^dag g5 Gamma_sink phi1A.  Gamma5 hermiticity puts
+            // both wall-noise factors at the source rather than at the sink.
+            c = trace(adj(phi2B) * g5 * gSnk * phi1A * P);
             std::vector<TComplex> buf = sink(c);
             for (int dt = 0; dt < nt; ++dt)
             {
