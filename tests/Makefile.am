@@ -21,6 +21,7 @@ EXTRA_PROGRAMS = \
   Test_result_bundling      \
   Test_sigma_to_nucleon     \
   Test_stoch_distil         \
+  Test_stochastic_meson     \
   Test_xi_to_sigma
 
 CLEANFILES = $(EXTRA_PROGRAMS)
@@ -83,6 +84,9 @@ Test_sigma_to_nucleon_LDADD=-lHadrons -lGrid
 
 Test_stoch_distil_SOURCES=Test_stoch_distil.cpp
 Test_stoch_distil_LDADD=-lHadrons -lGrid
+
+Test_stochastic_meson_SOURCES=Test_stochastic_meson.cpp
+Test_stochastic_meson_LDADD=-lHadrons -lGrid
 
 Test_xi_to_sigma_SOURCES=Test_xi_to_sigma.cpp
 Test_xi_to_sigma_LDADD=-lHadrons -lGrid

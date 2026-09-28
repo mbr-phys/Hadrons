@@ -53,12 +53,45 @@ int main(int argc, char *argv[])
     solverPar.maxIteration = 10000;
     application.createModule<MSolver::RBPrecCG>("CG", solverPar);
     
-    // Generate independent Z2 stochastic PropagatorField sources.
-    MSource::Z2::Par noisePar;
-    noisePar.tA = 0;
-    noisePar.tB = GridDefaultLatt()[Tp] - 1;  // full time extent
-    application.createModule<MSource::Z2>("eta", noisePar);
-    application.createModule<MSource::Z2>("chi", noisePar);
+    // Generate independent sparse Z2 stochastic sources, following the
+    // SparseSpinColorDiagonal -> Z2Diluted -> unpack workflow used by the
+    // fermion-flow test and RareK.
+    unsigned int nsrc = 1;
+    unsigned int nsparse = 2;
+    unsigned int nDilutions = nsrc*std::pow(nsparse, 4);
+
+    MNoise::SparseSpinColorDiagonal::Par etaSparsePar;
+    etaSparsePar.nsrc = nsrc;
+    etaSparsePar.nsparse = nsparse;
+    application.createModule<MNoise::SparseSpinColorDiagonal>("eta_sparse", etaSparsePar);
+
+    MSource::Z2Diluted::Par etaDilutedPar;
+    etaDilutedPar.noise = "eta_sparse";
+    application.createModule<MSource::Z2Diluted>("eta", etaDilutedPar);
+
+    MUtilities::PropagatorVectorUnpack::Par etaUnpackPar;
+    etaUnpackPar.input = "eta";
+    etaUnpackPar.size = nDilutions;
+    application.createModule<MUtilities::PropagatorVectorUnpack>("eta_unpacked", etaUnpackPar);
+
+    MNoise::SparseSpinColorDiagonal::Par chiSparsePar;
+    chiSparsePar.nsrc = nsrc;
+    chiSparsePar.nsparse = nsparse;
+    application.createModule<MNoise::SparseSpinColorDiagonal>("chi_sparse", chiSparsePar);
+
+    MSource::Z2Diluted::Par chiDilutedPar;
+    chiDilutedPar.noise = "chi_sparse";
+    application.createModule<MSource::Z2Diluted>("chi", chiDilutedPar);
+
+    MUtilities::PropagatorVectorUnpack::Par chiUnpackPar;
+    chiUnpackPar.input = "chi";
+    chiUnpackPar.size = nDilutions;
+    application.createModule<MUtilities::PropagatorVectorUnpack>("chi_unpacked", chiUnpackPar);
+
+    // This adjoint-flow test follows one dilution; the construction above
+    // still creates the complete nsrc*nsparse^4 sparse source set.
+    std::string etaName = "eta_unpacked_0";
+    std::string chiName = "chi_unpacked_0";
     
     // Pre-compute gauge trajectory (forward flow)
     // This saves gauge fields at all flow times for the adjoint flow to use
@@ -79,7 +112,7 @@ int main(int argc, char *argv[])
     adjointPar.gauge = "WilsonFlow_U_t0.00";     // U at earlier time (tau=0.00)
     adjointPar.stage1 = "WilsonFlow_W1_t0.00";
     adjointPar.stage2 = "WilsonFlow_W2_t0.00";
-    adjointPar.sources = {"eta"};                // xi at s+eps (treating eta as if at tau=0.01)
+    adjointPar.sources = {etaName};               // xi at s+eps (treating eta as if at tau=0.01)
     adjointPar.sourceTypes = {"PropagatorField"};
     adjointPar.outSources = {"xi_t0.00"};        // xi at s (after flowing to tau=0.00)
     adjointPar.steps = 1;                        // single step
@@ -107,7 +140,7 @@ int main(int argc, char *argv[])
     // source and its propagator with the shared gauge trajectory.
     MFermion::GaugeProp::Par positivePropagatorPar;
     positivePropagatorPar.solver = "CG";
-    positivePropagatorPar.source = "chi";
+    positivePropagatorPar.source = chiName;
     application.createModule<MFermion::GaugeProp>("chi_propagator",positivePropagatorPar);
 
     // Forward-flow chi from tau=0 to tau=0.01. Together with the adjoint
@@ -119,7 +152,7 @@ int main(int argc, char *argv[])
     forwardPar.steps = 1;
     forwardPar.step_size = 0.01;
     forwardPar.meas_interval = 1;
-    forwardPar.props = {"chi", "chi_propagator"};
+    forwardPar.props = {chiName, "chi_propagator"};
     forwardPar.defaultType = "PropagatorField";
     forwardPar.outProps = {"chi_t0.01", "chi_propagator_t0.01"};
     forwardPar.bc = -1;
@@ -128,11 +161,11 @@ int main(int argc, char *argv[])
     // Record the norms and inner products entering the discrete-adjoint test.
     MUtilities::NormCheckPropagator::Par backwardNormPar;
     backwardNormPar.field = "xi_t0.00";
-    backwardNormPar.reference = "chi";
+    backwardNormPar.reference = chiName;
     application.createModule<MUtilities::NormCheckPropagator>("BackwardNorm", backwardNormPar);
 
     MUtilities::NormCheckPropagator::Par forwardNormPar;
-    forwardNormPar.field = "eta";
+    forwardNormPar.field = etaName;
     forwardNormPar.reference = "chi_t0.01";
     application.createModule<MUtilities::NormCheckPropagator>("ForwardNorm", forwardNormPar);
 
