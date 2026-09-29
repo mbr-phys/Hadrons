@@ -55,9 +55,9 @@ BEGIN_HADRONS_NAMESPACE
  * following Meson.hpp.
  * 
  * Parameters:
- * - phi1A: solution field for flavour 1, noise A
+ * - phiA: solution field for flavour 1, noise A
  * - etaA:  noise field for noise A
- * - phi2B: solution field for flavour 2, noise B
+ * - phiB: solution field for flavour 2, noise B
  * - etaB:  noise field for noise B
  * - gammas: gamma matrix pairs "(Gamma_sink Gamma_source)..."
  * - sink:   spatial momentum projector (MSink module name)
@@ -78,9 +78,9 @@ class StochasticMesonPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(StochasticMesonPar,
-                                    std::string, phi1A,
+                                    std::string, phiA,
                                     std::string, etaA,
-                                    std::string, phi2B,
+                                    std::string, phiB,
                                     std::string, etaB,
                                     std::string, gammas,
                                     std::string, sink,
@@ -88,7 +88,8 @@ public:
                                     unsigned int, noiseA,
                                     unsigned int, noiseB,
                                     double, flowTime,
-                                    std::string, output);
+                                    std::string, output,
+                                    unsigned int, detSrc);
 };
 
 template <typename FImpl1, typename FImpl2>
@@ -194,7 +195,7 @@ int TStochasticMeson<FImpl1, FImpl2>::parseGammaString(std::map<Gamma::Algebra, 
 template <typename FImpl1, typename FImpl2>
 std::vector<std::string> TStochasticMeson<FImpl1, FImpl2>::getInput(void)
 {
-    std::vector<std::string> input = {par().phi1A, par().etaA, par().phi2B, par().etaB};
+    std::vector<std::string> input = {par().phiA, par().etaA, par().phiB, par().etaB};
     
     if (!par().sink.empty())
     {
@@ -235,14 +236,19 @@ void TStochasticMeson<FImpl1, FImpl2>::setup(void)
 template <typename FImpl1, typename FImpl2>
 void TStochasticMeson<FImpl1, FImpl2>::execute(void)
 {
-    if (par().etaA == par().etaB)
+    if (par().detSrc == 1) 
     {
-        HADRONS_ERROR(Argument, "etaA and etaB must be distinct noise fields");
+        LOG(Message) << "Allowing identical sources - these should be deterministic or you're making an error." << std::endl;
+    }
+
+    if ((par().etaA == par().etaB) && (par().detSrc == 0))
+    {
+        HADRONS_ERROR(Argument, "detSrc = 0 : etaA and etaB must be distinct noise fields");
     }
 
     LOG(Message) << "Computing stochastic meson contraction '" << getName() << "' using"
-                 << " phi1A='" << par().phi1A << "', etaA='" << par().etaA << "'"
-                 << " phi2B='" << par().phi2B << "', etaB='" << par().etaB << "'"
+                 << " phiA='" << par().phiA << "', etaA='" << par().etaA << "'"
+                 << " phiB='" << par().phiB << "', etaB='" << par().etaB << "'"
                  << std::endl;
 
     std::vector<Result> result;
@@ -270,9 +276,9 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
     }
     
     // Get input fields
-    auto &phi1A = envGet(PropagatorField1, par().phi1A);
+    auto &phiA = envGet(PropagatorField1, par().phiA);
     auto &etaA  = envGet(PropagatorField1, par().etaA);
-    auto &phi2B = envGet(PropagatorField2, par().phi2B);
+    auto &phiB = envGet(PropagatorField2, par().phiB);
     auto &etaB  = envGet(PropagatorField2, par().etaB);
     
     if (par().sink.empty())
@@ -291,9 +297,9 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
 
     // Use global lattice coordinates, rather than local grid indices, so the
     // source-time restriction and sink slicing work with a distributed time direction.
-    Lattice<iScalar<vInteger>> time(phi1A.Grid());
+    Lattice<iScalar<vInteger>> time(phiA.Grid());
     LatticeCoordinate(time, Tp);
-    PropagatorField1 source(phi1A.Grid());
+    PropagatorField1 source(phiA.Grid());
     envGetTmp(LatticeComplex, c);
 
     unsigned int i = 0;
@@ -315,9 +321,9 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
             source = where(time == static_cast<int>(par().sourceTime), source, 0.*source);
             auto P = sum(source);
 
-            // Q = phi2B^dag g5 Gamma_sink phi1A.  Gamma5 hermiticity puts
+            // Q = phiB^dag g5 Gamma_sink phiA.  Gamma5 hermiticity puts
             // both wall-noise factors at the source rather than at the sink.
-            c = trace(adj(phi2B) * g5 * gSnk * phi1A * P);
+            c = trace(adj(phiB) * g5 * gSnk * phiA * P);
             std::vector<TComplex> buf = sink(c);
             for (int dt = 0; dt < nt; ++dt)
             {
