@@ -41,12 +41,14 @@ BEGIN_HADRONS_NAMESPACE
  * Parameters:
  * - eta: noise field (FermionField or PropagatorField)
  * - phi: solution field (same type as eta)
- * - gamma: gamma matrix insertion (default: "Identity")
- * - c_fl: flow-time O(a) improvement coefficient (default: 0; only used for gamma="Identity")
+ * - gammas: gamma matrix insertions (space-separated strings, e.g.
+ *           "Identity Gamma5 GammaT"; special value "all")
+ * - c_fl: flow-time O(a) improvement coefficient (default: 0; only used for
+ *         gammas="Identity")
  * 
- * - Scalar condensate: gamma="Identity", c_fl=0.5 (tree-level Wilson) or 0 (DWF)
- * - Pseudoscalar: gamma="Gamma5", c_fl=0
- * - Derivative condensate: use DslashField first, then gamma="Identity"
+ * - Scalar condensate: gammas="Identity", c_fl=0.5 (tree-level Wilson) or 0 (DWF)
+ * - Pseudoscalar: gammas="Gamma5", c_fl=0
+ * - Derivative condensate: use DslashField first, then gammas="Identity"
  */
 
 /******************************************************************************
@@ -60,7 +62,7 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(StochasticCondensatePar,
                                     std::string, eta,
                                     std::string, phi,
-                                    Gamma::Algebra, gamma,
+                                    std::string, gammas,
                                     double, c_fl,
                                     std::string, output);
 };
@@ -87,6 +89,7 @@ public:
     virtual std::vector<std::string> getInput(void);
     virtual std::vector<std::string> getOutput(void);
     virtual std::vector<std::string> getOutputFiles(void);
+    virtual void parseGammaString(std::vector<Gamma::Algebra> &gammaList);
     // setup
     virtual void setup(void);
     // execution
@@ -140,43 +143,65 @@ void TStochasticCondensate<FImpl, Field>::setup(void)
     envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
+template <typename FImpl, typename Field>
+void TStochasticCondensate<FImpl, Field>::parseGammaString(std::vector<Gamma::Algebra> &gammaList)
+{
+    gammaList.clear();
+    if (par().gammas.compare("all") == 0)
+    {
+        for (unsigned int i = 1; i < Gamma::nGamma; i += 2)
+        {
+            gammaList.push_back((Gamma::Algebra)i);
+        }
+    }
+    else
+    {
+        gammaList = strToVec<Gamma::Algebra>(par().gammas);
+    }
+}
+
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl, typename Field>
 void TStochasticCondensate<FImpl, Field>::execute(void)
 {
     LOG(Message) << "Computing stochastic condensate '" << getName() 
                  << "' using eta='" << par().eta << "' and phi='" << par().phi 
-                 << "' with gamma=" << par().gamma
+                 << "' with " << par().gammas << " insertions"
                  << " and c_fl=" << par().c_fl << "." << std::endl;
 
     auto &eta = envGet(Field, par().eta);
     auto &phi = envGet(Field, par().phi);
-    
-    Gamma G(par().gamma);
-    
-    LatticeComplex integrand = -localInnerProduct(eta, closure(G * phi));
-    
-    // Add c_fl term only for scalar channel (gamma = Identity)
-    if (par().c_fl != 0.0 && par().gamma == Gamma::Algebra::Identity) {
-        LatticeComplex eta_norm2 = localInnerProduct(eta, eta);
-        integrand += par().c_fl * eta_norm2;
-    } else if (par().c_fl != 0.0 && par().gamma != Gamma::Algebra::Identity) {
-        LOG(Warning) << "c_fl term ignored for non-scalar gamma structure" << std::endl;
+    std::vector<Gamma::Algebra> gammaList;
+    std::vector<Result> result;
+
+    parseGammaString(gammaList);
+    result.resize(gammaList.size());
+    for (unsigned int i = 0; i < gammaList.size(); ++i)
+    {
+        Gamma G(gammaList[i]);
+        LatticeComplex integrand = -localInnerProduct(eta, closure(G * phi));
+
+        result[i].gamma = gammaList[i];
+        result[i].c_fl = 0.0;
+        if (par().c_fl != 0.0 && gammaList[i] == Gamma::Algebra::Identity)
+        {
+            integrand += par().c_fl * localInnerProduct(eta, eta);
+            result[i].c_fl = par().c_fl;
+        }
+        else if (par().c_fl != 0.0)
+        {
+            LOG(Warning) << "c_fl term ignored for non-scalar gamma structure [" << gammaList[i] << "]" << std::endl;
+        }
+
+        result[i].condensate = TensorRemove(sum(integrand));
+        LOG(Message) << "Condensate (" << gammaList[i] << ") = "
+                     << result[i].condensate << std::endl;
     }
-    
-    Complex condensate = TensorRemove(sum(integrand));
-    
-    Result result;
-    result.gamma = par().gamma;
-    result.c_fl = par().c_fl;
-    result.condensate = condensate;
     
     auto &out = envGet(HadronsSerializable, getName());
     out = result;
     
     saveResult(par().output, "condensate", result);
-    
-    LOG(Message) << "Condensate = " << condensate << std::endl;
 }
 
 END_MODULE_NAMESPACE

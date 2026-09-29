@@ -72,7 +72,6 @@ int main(int argc, char *argv[])
     std::vector<std::string> qName = {"Qpt_0"};
     application.createModule<MFermion::GaugeProp>(qName[0], quarkPar);
 
-    // zero-flow meson from standard propagator (for comparison)
     MContraction::Meson::Par mesPar;
     mesPar.q1     = qName[0];
     mesPar.q2     = qName[0];
@@ -114,19 +113,19 @@ int main(int argc, char *argv[])
     application.createModule<MFermion::GaugeProp>(phiB, phiParB);
     
     // Stochastic meson contraction using StochasticMeson module
-    // Use noise pair (A=0, B=0) at source time 0, zero flow time
+    // Use noise pair (A=0, B=0) at source time 0
     MContraction::StochasticMeson::Par stochMesPar;
-    stochMesPar.phi1A      = phiA;
+    stochMesPar.phiA       = phiA;
     stochMesPar.etaA       = etaA;
-    stochMesPar.phi2B      = phiB;
+    stochMesPar.phiB       = phiB;
     stochMesPar.etaB       = etaB;
     stochMesPar.gammas     = "(Gamma5 Gamma5)";  
     stochMesPar.sink       = "sink";
     stochMesPar.sourceTime = sourceTime;
     stochMesPar.noiseA     = 0;
     stochMesPar.noiseB     = 0;
-    stochMesPar.flowTime   = 0.0;
-    stochMesPar.output     = "stoch_meson_ps";
+    stochMesPar.detSrc     = 0;
+    //stochMesPar.output     = "stoch_meson_ps";
     application.createModule<MContraction::StochasticMeson>("stoch_meson_t0", stochMesPar);
 
     // Collect names of results to be written to file
