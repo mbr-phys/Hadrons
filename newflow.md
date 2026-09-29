@@ -40,7 +40,7 @@ For a volume-summed local operator $A_\tau$, built with the gauge field at the s
 
 $$
 \left\langle\sum_x\bar\chi_\tau(x)A_\tau\chi_\tau(x)\right\rangle_f
-=-\operatorname{Tr}\left[K_\tau^\dagger A_\tau K_\tau D_f^{-1}\right]
+=-\mathrm{Tr}\left[K_\tau^\dagger A_\tau K_\tau D_f^{-1}\right]
 =-\mathbb E_\eta\left[(\eta_\tau,A_\tau\phi_\tau)\right].
 $$
 
@@ -78,7 +78,7 @@ so that $\xi(\tau;0)=K_\tau^\dagger\eta$. For the scalar trace,
 
 $$
 -\mathbb E_\eta\left[(\xi(\tau;0),D_f^{-1}\xi(\tau;0))\right]
-=-\operatorname{Tr}\left[K_\tau^\dagger K_\tau D_f^{-1}\right],
+=-\mathrm{Tr}\left[K_\tau^\dagger K_\tau D_f^{-1}\right],
 $$
 
 which is the same flowed bilinear as the positive-flow expression. Gauge flow is never reversed: the backward evolution is only the discrete adjoint of the fermion update and must use gauge stages generated on the forward trajectory.
