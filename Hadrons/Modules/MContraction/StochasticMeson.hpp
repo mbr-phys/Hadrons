@@ -319,7 +319,8 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
             // This locates the flowed source operator at sourceTime; it does
             // not restrict the temporal smearing already contained in its fields.
             source = where(time == static_cast<int>(par().sourceTime), source, 0.*source);
-            auto P = sum(source);
+            //auto P = sum(source);
+            auto P = sliceSum(source, Tp)[par().sourceTime];
 
             // Q = phiB^dag g5 Gamma_sink phiA.  Gamma5 hermiticity puts
             // both wall-noise factors at the source rather than at the sink.
