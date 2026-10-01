@@ -249,19 +249,19 @@ void TSmearedMeson<FImpl>::execute(void)
                 {
                     const Matrix first = makeTau(par().perambStemL, perambLCache, tSink, tSrc);
                     const Matrix second = makeTau(par().perambStemL, perambLCache, tSink, tSrc, &gam);
-                    ll[resultIndex].corr[tSink] = -(second.adjoint()*first*src).trace();
+                    ll[resultIndex].corr[tSink] = (first.adjoint()*second*src).trace();
                 }
                 if (hasL && hasC)
                 {
                     const Matrix first = makeTau(par().perambStemC, perambCCache, tSink, tSrc);
                     const Matrix second = makeTau(par().perambStemL, perambLCache, tSink, tSrc, &gam);
-                    cl[resultIndex].corr[tSink] = -(second.adjoint()*first*src).trace();
+                    cl[resultIndex].corr[tSink] = (first.adjoint()*second*src).trace();
                 }
                 if (hasC)
                 {
                     const Matrix first = makeTau(par().perambStemC, perambCCache, tSink, tSrc);
                     const Matrix second = makeTau(par().perambStemC, perambCCache, tSink, tSrc, &gam);
-                    cc[resultIndex].corr[tSink] = -(second.adjoint()*first*src).trace();
+                    cc[resultIndex].corr[tSink] = (first.adjoint()*second*src).trace();
                 }
             }
 
