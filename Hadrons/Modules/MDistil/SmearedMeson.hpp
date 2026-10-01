@@ -169,26 +169,30 @@ void TSmearedMeson<FImpl>::execute(void)
         return tau;
     };
 
-    std::vector<std::vector<int>> tVec;
-    for (auto t: par().tSrcs) tVec.push_back({static_cast<int>(t), static_cast<int>(t)});
-    for (unsigned int t = tFirst; t < tFirst + tLocal; ++t) tVec.push_back({static_cast<int>(t), static_cast<int>(t)});
-    std::sort(tVec.begin(), tVec.end());
-    tVec.erase(std::unique(tVec.begin(), tVec.end()), tVec.end());
+    std::vector<std::vector<int>> sinkTVec;
+    for (unsigned int t = tFirst; t < tFirst + tLocal; ++t)
+    {
+        sinkTVec.push_back({static_cast<int>(t), static_cast<int>(t)});
+    }
 
     auto fieldPath = [&](const std::string &gamma, const std::string &mom)
     {
         return par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + gamma + "_p" + mom + ".h5";
     };
-    std::map<std::string, ContractionDistilMesonField<ComplexD, ComplexF>> rhoRho;
-    auto loadRhoRho = [&](const std::string &gamma, const std::string &mom)
+    // A source requires one diagonal block only.  Sink fields need every
+    // local sink time, so retain a separate cache for them.  This prevents a
+    // source field from loading the union of source and sink time blocks.
+    std::map<std::string, ContractionDistilMesonField<ComplexD, ComplexF>> sourceRhoRho, sinkRhoRho;
+    auto loadRhoRho = [&](std::map<std::string, ContractionDistilMesonField<ComplexD, ComplexF>> &cache,
+                          const std::string &key, const std::string &gamma, const std::string &mom,
+                          std::vector<std::vector<int>> &times)
         -> ContractionDistilMesonField<ComplexD, ComplexF> &
     {
-        const std::string key = gamma + "_p" + mom;
-        auto it = rhoRho.find(key);
-        if (it == rhoRho.end())
+        auto it = cache.find(key);
+        if (it == cache.end())
         {
             TimerArray timer;
-            it = rhoRho.emplace(key, ContractionDistilMesonField<ComplexD, ComplexF>(fieldPath(gamma, mom), nT, timer, tVec)).first;
+            it = cache.emplace(key, ContractionDistilMesonField<ComplexD, ComplexF>(fieldPath(gamma, mom), nT, timer, times)).first;
         }
         return it->second;
     };
@@ -214,7 +218,9 @@ void TSmearedMeson<FImpl>::execute(void)
             srcMom += std::to_string(pSrc[mu]) + (mu + 1 == pSrc.size() ? "" : "_");
             snkMom += std::to_string(-pSrc[mu]) + (mu + 1 == pSrc.size() ? "" : "_");
         }
-        auto &srcField = loadRhoRho(par().RhoRhoField, srcMom);
+        std::vector<std::vector<int>> srcTVec = {{static_cast<int>(tSrc), static_cast<int>(tSrc)}};
+        const std::string srcKey = par().RhoRhoField + "_p" + srcMom + "_t" + std::to_string(tSrc);
+        auto &srcField = loadRhoRho(sourceRhoRho, srcKey, par().RhoRhoField, srcMom, srcTVec);
         const Matrix src = srcField(tSrc, tSrc, tSrc);
         if (src.rows() != nLS || src.cols() != nLS)
         {
@@ -225,7 +231,8 @@ void TSmearedMeson<FImpl>::execute(void)
         {
             std::stringstream gammaName;
             gammaName << gamma;
-            auto &snkField = loadRhoRho(gammaName.str(), snkMom);
+            const std::string snkKey = gammaName.str() + "_p" + snkMom;
+            auto &snkField = loadRhoRho(sinkRhoRho, snkKey, gammaName.str(), snkMom, sinkTVec);
             auto initResult = [&](Result &r)
             {
                 r.gammaSrc = par().RhoRhoField;
