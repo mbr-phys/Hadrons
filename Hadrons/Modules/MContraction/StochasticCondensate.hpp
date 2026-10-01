@@ -193,7 +193,12 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
             LOG(Warning) << "c_fl term ignored for non-scalar gamma structure [" << gammaList[i] << "]" << std::endl;
         }
 
-        result[i].condensate = TensorRemove(sum(integrand));
+        //result[i].condensate = TensorRemove(sum(integrand));
+        result[i].condensate = 0.;
+        for (auto &slice : sliceSum(integrand, Tp))
+        {
+            result[i].condensate += TensorRemove(slice);
+        }
         LOG(Message) << "Condensate (" << gammaList[i] << ") = "
                      << result[i].condensate << std::endl;
     }
