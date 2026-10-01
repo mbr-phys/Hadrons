@@ -154,7 +154,8 @@ void TSmearedMeson<FImpl>::execute(void)
     };
 
     auto makeTau = [&](const std::string &stem, std::map<unsigned int, PerambIndexTensor> &cache,
-                       const unsigned int tSink, const unsigned int tSrc)
+                       const unsigned int tSink, const unsigned int tSrc,
+                       const Gamma *leftGamma = nullptr)
     {
         auto &p = loadPeramb(stem, cache, tSrc);
         Matrix tau(nLS, nLS);
@@ -163,26 +164,24 @@ void TSmearedMeson<FImpl>::execute(void)
         for (unsigned int jVec = 0; jVec < nVec; ++jVec)
         for (unsigned int jSpin = 0; jSpin < Ns; ++jSpin)
         {
+            auto spin = p.tensor(tSink, iVec, jVec, 0, jSpin)();
+            if (leftGamma)
+            {
+                spin = (*leftGamma)*spin;
+            }
             tau(iVec*Ns + iSpin, jVec*Ns + jSpin) =
-                p.tensor(tSink, iVec, jVec, 0, jSpin)()(iSpin)();
+                spin(iSpin)();
         }
         return tau;
     };
-
-    std::vector<std::vector<int>> sinkTVec;
-    for (unsigned int t = tFirst; t < tFirst + tLocal; ++t)
-    {
-        sinkTVec.push_back({static_cast<int>(t), static_cast<int>(t)});
-    }
 
     auto fieldPath = [&](const std::string &gamma, const std::string &mom)
     {
         return par().RhoRhoStem + "rho-rho." + std::to_string(vm().getTrajectory()) + "/" + gamma + "_p" + mom + ".h5";
     };
-    // A source requires one diagonal block only.  Sink fields need every
-    // local sink time, so retain a separate cache for them.  This prevents a
-    // source field from loading the union of source and sink time blocks.
-    std::map<std::string, ContractionDistilMesonField<ComplexD, ComplexF>> sourceRhoRho, sinkRhoRho;
+    // The pre-existing rho-rho meson field is the source operator.  Cache the
+    // one requested diagonal block separately for every source time.
+    std::map<std::string, ContractionDistilMesonField<ComplexD, ComplexF>> sourceRhoRho;
     auto loadRhoRho = [&](std::map<std::string, ContractionDistilMesonField<ComplexD, ComplexF>> &cache,
                           const std::string &key, const std::string &gamma, const std::string &mom,
                           std::vector<std::vector<int>> &times)
@@ -231,8 +230,7 @@ void TSmearedMeson<FImpl>::execute(void)
         {
             std::stringstream gammaName;
             gammaName << gamma;
-            const std::string snkKey = gammaName.str() + "_p" + snkMom;
-            auto &snkField = loadRhoRho(sinkRhoRho, snkKey, gammaName.str(), snkMom, sinkTVec);
+            Gamma gam(gamma);
             auto initResult = [&](Result &r)
             {
                 r.gammaSrc = par().RhoRhoField;
@@ -247,28 +245,23 @@ void TSmearedMeson<FImpl>::execute(void)
             if (hasC) initResult(cc[resultIndex]);
             for (unsigned int tSink = tFirst; tSink < tFirst + tLocal; ++tSink)
             {
-                const Matrix snk = snkField(tSink, tSink, tSink);
-                if (snk.rows() != nLS || snk.cols() != nLS)
-                {
-                    HADRONS_ERROR(Size, "rho-rho sink matrix is incompatible with perambulator LapH-spin dimension");
-                }
                 if (hasL)
                 {
-                    const Matrix forward = makeTau(par().perambStemL, perambLCache, tSink, tSrc);
-                    const Matrix backward = makeTau(par().perambStemL, perambLCache, tSrc, tSink);
-                    ll[resultIndex].corr[tSink] = -(snk*forward*src*backward).trace();
+                    const Matrix first = makeTau(par().perambStemL, perambLCache, tSink, tSrc);
+                    const Matrix second = makeTau(par().perambStemL, perambLCache, tSink, tSrc, &gam);
+                    ll[resultIndex].corr[tSink] = -(second.adjoint()*first*src).trace();
                 }
                 if (hasL && hasC)
                 {
-                    const Matrix forward = makeTau(par().perambStemC, perambCCache, tSink, tSrc);
-                    const Matrix backward = makeTau(par().perambStemL, perambLCache, tSrc, tSink);
-                    cl[resultIndex].corr[tSink] = -(snk*forward*src*backward).trace();
+                    const Matrix first = makeTau(par().perambStemC, perambCCache, tSink, tSrc);
+                    const Matrix second = makeTau(par().perambStemL, perambLCache, tSink, tSrc, &gam);
+                    cl[resultIndex].corr[tSink] = -(second.adjoint()*first*src).trace();
                 }
                 if (hasC)
                 {
-                    const Matrix forward = makeTau(par().perambStemC, perambCCache, tSink, tSrc);
-                    const Matrix backward = makeTau(par().perambStemC, perambCCache, tSrc, tSink);
-                    cc[resultIndex].corr[tSink] = -(snk*forward*src*backward).trace();
+                    const Matrix first = makeTau(par().perambStemC, perambCCache, tSink, tSrc);
+                    const Matrix second = makeTau(par().perambStemC, perambCCache, tSink, tSrc, &gam);
+                    cc[resultIndex].corr[tSink] = -(second.adjoint()*first*src).trace();
                 }
             }
 
