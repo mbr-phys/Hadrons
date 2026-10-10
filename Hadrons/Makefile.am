@@ -36,6 +36,7 @@ nobase_libHadrons_a_HEADERS = \
 	FieldIo.hpp               \
 	FieldIoSharded.hpp        \
 	GeneticScheduler.hpp      \
+	GaugeBoundary.hpp         \
 	Global.hpp                \
 	Graph.hpp                 \
 	LatticeUtilities.hpp      \
