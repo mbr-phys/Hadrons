@@ -183,7 +183,7 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::setup(void)
     const double effectiveCG = (par().bc == 0) ? par().cG : 1.0;
     envCreate(GaugeBoundaryInfo,
               GaugeBoundary::metadataName(getName()+"_U"), 1,
-              effectiveGaugeBc, Nd - 1, effectiveCG, true,
+              effectiveGaugeBc, effectiveCG, true,
               true, "WilsonAction", par().step_size,
               par().steps * par().step_size, "field");
 
@@ -272,7 +272,7 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
     if (env().hasCreatedObject(inputMetadata)) {
         auto &info = envGet(GaugeBoundaryInfo, inputMetadata);
         const std::string mismatch = GaugeBoundary::compatibilityError(
-            info, expectedGaugeBc, Nd - 1, par().cG);
+            info, expectedGaugeBc, par().cG);
         if (!mismatch.empty()) {
             HADRONS_ERROR(Argument,
                           "gauge boundary metadata mismatch for '" +

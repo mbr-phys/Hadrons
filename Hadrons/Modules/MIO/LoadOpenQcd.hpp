@@ -51,8 +51,7 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(LoadOpenQcdPar,
                                     std::string, file,
                                     std::string, gaugeBC,
-                                    double, cG,
-                                    int, timeDir);
+                                    double, cG);
 };
 
 template <typename GImpl>
@@ -113,9 +112,6 @@ void TLoadOpenQcd<GImpl>::setup(void)
         HADRONS_ERROR(Argument,
                       "gaugeBC must be 'unknown', 'periodic', or 'open'");
     }
-    if (par().timeDir < 0 || par().timeDir >= Nd) {
-        HADRONS_ERROR(Argument, "timeDir is outside the lattice dimensions");
-    }
     if (!std::isfinite(par().cG) || par().cG < 0.0) {
         HADRONS_ERROR(Argument,
                       "cG must be explicitly set to a finite non-negative value");
@@ -126,7 +122,7 @@ void TLoadOpenQcd<GImpl>::setup(void)
                              ? par().cG : 1.0;
     envCreateLat(GaugeField, getName());
     envCreate(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName()), 1,
-              par().gaugeBC, par().timeDir, effectiveCG, userSpecified);
+              par().gaugeBC, effectiveCG, userSpecified);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -141,8 +137,7 @@ void TLoadOpenQcd<GImpl>::execute(void)
 
     LOG(Message) << "Declared temporal gauge boundary: " << par().gaugeBC;
     if (par().gaugeBC == GaugeBoundary::open) {
-        LOG(Message) << " (timeDir=" << par().timeDir
-                     << ", cG=" << par().cG << ")";
+        LOG(Message) << " (cG=" << par().cG << ")";
     }
     LOG(Message) << std::endl;
 
@@ -164,27 +159,26 @@ void TLoadOpenQcd<GImpl>::execute(void)
     if (par().gaugeBC == GaugeBoundary::open) {
         using Boundary = OpenGaugeBoundary<GImpl>;
         const Coordinate dimensions = U.Grid()->GlobalDimensions();
-        const int nt = dimensions[par().timeDir];
+        const int nt = dimensions[Nd - 1];
         if (nt < 2) {
             HADRONS_ERROR(Size,
                           "open temporal boundary requires extent at least 2");
         }
 
         const RealD openQcdWeight =
-            GaugeBoundary::openQcdPlaquetteWeight(dimensions, par().timeDir);
+            GaugeBoundary::openQcdPlaquetteWeight(dimensions);
         const RealD actionWeight =
-            GaugeBoundary::actionPlaquetteWeight(dimensions, par().timeDir,
-                                                  par().cG);
+            GaugeBoundary::actionPlaquetteWeight(dimensions, par().cG);
 
         const auto loops = Boundary::plaquetteLoops(1.0);
         Boundary openQcdBoundary(
-            OpenGaugeBoundaryParameters::Open(par().timeDir, 1.0));
+            OpenGaugeBoundaryParameters::Open(Nd - 1, 1.0));
         const RealD openQcdAction = openQcdBoundary.action(U, loops);
         const RealD weightedGrid = 1.0 - openQcdAction / openQcdWeight;
         const RealD weightedRaw = RealD(GImpl::num_colours) * weightedGrid;
 
         Boundary actionBoundary(
-            OpenGaugeBoundaryParameters::Open(par().timeDir, par().cG));
+            OpenGaugeBoundaryParameters::Open(Nd - 1, par().cG));
         const RealD cGAction = actionBoundary.action(U, loops);
         const RealD actionWeighted = 1.0 - cGAction / actionWeight;
 

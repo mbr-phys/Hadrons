@@ -227,7 +227,7 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
 
             auto &info = envGet(GaugeBoundaryInfo, metadata);
             const std::string mismatch = GaugeBoundary::compatibilityError(
-                info, expectedGaugeBc, Nd - 1, par().cG);
+                info, expectedGaugeBc, par().cG);
             if (!mismatch.empty()) {
                 HADRONS_ERROR(Argument,
                               "gauge boundary metadata mismatch for " + role +

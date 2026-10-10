@@ -57,9 +57,9 @@ inline std::string gaugeTypeFromFermionBc(const int bc)
     return (bc == 0) ? open : periodic;
 }
 
-inline RealD openQcdPlaquetteWeight(const Coordinate &dimensions,
-                                    const int timeDir)
+inline RealD openQcdPlaquetteWeight(const Coordinate &dimensions)
 {
+    constexpr int timeDir = Nd - 1;
     RealD transverseVolume = 1.0;
     for (int mu = 0; mu < static_cast<int>(dimensions.size()); ++mu) {
         if (mu != timeDir) {
@@ -76,8 +76,9 @@ inline RealD openQcdPlaquetteWeight(const Coordinate &dimensions,
 }
 
 inline RealD actionPlaquetteWeight(const Coordinate &dimensions,
-                                   const int timeDir, const RealD cG)
+                                   const RealD cG)
 {
+    constexpr int timeDir = Nd - 1;
     RealD transverseVolume = 1.0;
     for (int mu = 0; mu < static_cast<int>(dimensions.size()); ++mu) {
         if (mu != timeDir) {
@@ -101,7 +102,6 @@ class GaugeBoundaryInfo: public Serializable
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(GaugeBoundaryInfo,
                                     std::string, type,
-                                    int, timeDir,
                                     double, cG,
                                     bool, userSpecified,
                                     bool, hasFlowInfo,
@@ -112,7 +112,6 @@ public:
 
     GaugeBoundaryInfo(void)
     : type(GaugeBoundary::unknown)
-    , timeDir(Nd - 1)
     , cG(1.0)
     , userSpecified(false)
     , hasFlowInfo(false)
@@ -120,15 +119,14 @@ public:
     , flowTime(0.0)
     {}
 
-    GaugeBoundaryInfo(const std::string &type_, const int timeDir_,
-                      const double cG_, const bool userSpecified_,
+    GaugeBoundaryInfo(const std::string &type_, const double cG_,
+                      const bool userSpecified_,
                       const bool hasFlowInfo_ = false,
                       const std::string &flowAction_ = std::string(),
                       const double stepSize_ = 0.0,
                       const double flowTime_ = 0.0,
                       const std::string &stage_ = std::string())
     : type(type_)
-    , timeDir(timeDir_)
     , cG(cG_)
     , userSpecified(userSpecified_)
     , hasFlowInfo(hasFlowInfo_)
@@ -149,7 +147,6 @@ inline bool isKnown(const GaugeBoundaryInfo &info)
 
 inline std::string compatibilityError(const GaugeBoundaryInfo &info,
                                       const std::string &expectedType,
-                                      const int expectedTimeDir,
                                       const double expectedCG)
 {
     if (!isValidType(info.type)) {
@@ -166,11 +163,6 @@ inline std::string compatibilityError(const GaugeBoundaryInfo &info,
                "' but module expects '" + expectedType + "'";
     }
     if (expectedType == open) {
-        if (info.timeDir != expectedTimeDir) {
-            return "metadata declares open direction " +
-                   std::to_string(info.timeDir) + " but module expects " +
-                   std::to_string(expectedTimeDir);
-        }
         const double scale = 1.0 + std::max(std::abs(info.cG),
                                             std::abs(expectedCG));
         if (!std::isfinite(info.cG) ||
