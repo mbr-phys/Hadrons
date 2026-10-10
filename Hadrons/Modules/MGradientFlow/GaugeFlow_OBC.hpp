@@ -222,7 +222,7 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::setup(void)
                                         const double flowTime,
                                         const std::string &stage) {
             envCreate(GaugeBoundaryInfo, GaugeBoundary::metadataName(field), 1,
-                      par().gaugeBC, Nd - 1, effectiveCG, true,
+                      par().gaugeBC, effectiveCG, true,
                       true, actionName, par().step_size, flowTime, stage);
         };
 
