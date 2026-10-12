@@ -18,11 +18,14 @@
 BEGIN_HADRONS_NAMESPACE
 BEGIN_MODULE_NAMESPACE(MSolver)
 
+template <typename FImpl>
 class WilsonCloverMdagMMGSetupData
 {
 public:
-    FERM_TYPE_ALIASES(FIMPLD,);
+    FERM_TYPE_ALIASES(FImpl,);
     static constexpr int nBasis = 40;
+    typedef typename FermionField::vector_object FineObject;
+    typedef iSinglet<typename FImpl::Simd> CoarseComplex;
     typedef Grid::WilsonCloverMdagMMG::PreconditionerBase<FermionField>
         Preconditioner;
 
@@ -34,7 +37,7 @@ public:
     , params_(params)
     , levels_(grid, params_)
     , preconditioner_(Grid::WilsonCloverMdagMMG::create<
-          vSpinColourVectorD, vTComplexD, nBasis>(
+          FineObject, CoarseComplex, nBasis>(
               params_, levels_, matrix_, matrix_))
     {
         preconditioner_->setup();
@@ -65,11 +68,12 @@ public:
         double, checkTolerance);
 };
 
+template <typename FImpl>
 class TWilsonCloverMdagMMGSetup:
     public Module<WilsonCloverMdagMMGSetupPar>
 {
 public:
-    FERM_TYPE_ALIASES(FIMPLD,);
+    FERM_TYPE_ALIASES(FImpl,);
     TWilsonCloverMdagMMGSetup(const std::string name): Module(name) {}
     virtual std::vector<std::string> getInput(void) { return {par().action}; }
     virtual std::vector<std::string> getOutput(void) { return {getName()}; }
@@ -92,8 +96,8 @@ protected:
         }
         Grid::WilsonCloverMdagMMG::validateParameters(par().mg);
         auto &matrix = envGetDerived(
-            FMat, CompactWilsonClover<FIMPLD>, par().action);
-        envCreate(WilsonCloverMdagMMGSetupData, getName(), 1, matrix,
+            FMat, CompactWilsonClover<FImpl>, par().action);
+        envCreate(WilsonCloverMdagMMGSetupData<FImpl>, getName(), 1, matrix,
                   envGetGrid(FermionField), par().mg,
                   par().runChecks, par().checkTolerance);
     }
@@ -101,7 +105,7 @@ protected:
 };
 
 MODULE_REGISTER_TMP(WilsonCloverMdagMMGSetup,
-                    TWilsonCloverMdagMMGSetup, MSolver);
+                    ARG(TWilsonCloverMdagMMGSetup<FIMPLD>), MSolver);
 
 class WilsonCloverMdagMMGFGMRESPar: Serializable
 {
@@ -116,12 +120,13 @@ public:
         std::string, guesser);
 };
 
+template <typename FImpl>
 class TWilsonCloverMdagMMGFGMRES:
     public Module<WilsonCloverMdagMMGFGMRESPar>
 {
 public:
-    FERM_TYPE_ALIASES(FIMPLD,);
-    SOLVER_TYPE_ALIASES(FIMPLD,);
+    FERM_TYPE_ALIASES(FImpl,);
+    SOLVER_TYPE_ALIASES(FImpl,);
     TWilsonCloverMdagMMGFGMRES(const std::string name): Module(name) {}
     virtual std::vector<std::string> getInput(void)
     {
@@ -150,9 +155,10 @@ protected:
 };
 
 MODULE_REGISTER_TMP(WilsonCloverMdagMMGFGMRES,
-                    TWilsonCloverMdagMMGFGMRES, MSolver);
+                    ARG(TWilsonCloverMdagMMGFGMRES<FIMPLD>), MSolver);
 
-inline void TWilsonCloverMdagMMGFGMRES::setup(void)
+template <typename FImpl>
+void TWilsonCloverMdagMMGFGMRES<FImpl>::setup(void)
 {
     if (par().maxIteration == 0)
         HADRONS_ERROR(Argument, "zero maximum iteration");
@@ -163,7 +169,7 @@ inline void TWilsonCloverMdagMMGFGMRES::setup(void)
         HADRONS_ERROR(Argument, "residual must be finite and positive");
 
     auto &matrix = envGet(FMat, par().action);
-    auto &mg = envGet(WilsonCloverMdagMMGSetupData, par().mgSetup);
+    auto &mg = envGet(WilsonCloverMdagMMGSetupData<FImpl>, par().mgSetup);
     if (&matrix != &mg.getMatrix())
         HADRONS_ERROR(Definition,
                       "multigrid setup was constructed for a different action");
