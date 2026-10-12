@@ -23,7 +23,8 @@ EXTRA_PROGRAMS = \
   Test_sigma_to_nucleon     \
   Test_stoch_distil         \
   Test_stochastic_meson     \
-  Test_xi_to_sigma
+  Test_xi_to_sigma          \
+  Test_wilsonclover_solvers
 
 CLEANFILES = $(EXTRA_PROGRAMS)
 
@@ -94,3 +95,6 @@ Test_stochastic_meson_LDADD=-lHadrons -lGrid
 
 Test_xi_to_sigma_SOURCES=Test_xi_to_sigma.cpp
 Test_xi_to_sigma_LDADD=-lHadrons -lGrid
+
+Test_wilsonclover_solvers_SOURCES=Test_wilsonclover_solvers.cpp
+Test_wilsonclover_solvers_LDADD=-lHadrons -lGrid

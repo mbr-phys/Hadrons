@@ -121,8 +121,7 @@ void TNormCheck<Field>::execute(void)
         result.differenceNorm2 = result.norm2 + result.referenceNorm2
                                - 2.0*real(result.innerProduct);
 
-        const double denominator = std::sqrt(result.norm2)
-                                 + std::sqrt(result.referenceNorm2);
+        const double denominator = std::sqrt(result.referenceNorm2);
         result.relativeDifference = (denominator == 0.0)
                                   ? 0.0
                                   : std::sqrt(std::max(0.0, result.differenceNorm2))/denominator;
