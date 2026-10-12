@@ -234,7 +234,15 @@ void TMixedPrecisionRBPrecFGMRES<FImplInner, FImplOuter>::setup(void)
     auto &omat = envGet(FMatOuter, par().outerAction);
     auto *innerGrid = getGrid<FermionFieldInner>(true, innerLs);
     auto *outerGrid = getGrid<FermionFieldOuter>(true, outerLs);
-    if (innerGrid->GlobalDimensions() != outerGrid->GlobalDimensions())
+    const auto &innerDimensions = innerGrid->GlobalDimensions();
+    const auto &outerDimensions = outerGrid->GlobalDimensions();
+    bool dimensionsMatch = (innerDimensions.size() == outerDimensions.size());
+    for (int d = 0; dimensionsMatch &&
+         (d < static_cast<int>(innerDimensions.size())); ++d)
+    {
+        dimensionsMatch = (innerDimensions[d] == outerDimensions[d]);
+    }
+    if (!dimensionsMatch)
     {
         HADRONS_ERROR(Size,
                       "inner and outer actions have different global dimensions");
