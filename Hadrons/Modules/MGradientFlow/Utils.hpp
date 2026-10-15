@@ -29,6 +29,7 @@
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
+#include <Hadrons/GaugeBoundary.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -47,7 +48,12 @@ public:
                                     std::vector<ComplexD>,  polyakovX,
                                     std::vector<ComplexD>,  polyakovY,
                                     std::vector<ComplexD>,  polyakovZ,
-                                    std::vector<ComplexD>,  polyakovT);
+                                    std::vector<ComplexD>,  polyakovT,
+                                    std::string,            boundaryType,
+                                    int,                    timeDirection,
+                                    double,                 cG,
+                                    std::string,            observableScheme,
+                                    bool,                   temporalPolyakovAvailable);
 };
 
 // Wilson flow implemented through the padded plaquette/rectangle force path.
@@ -374,6 +380,12 @@ class Evolution {
         // gauge field status //////////////////////////////////////////////////////////
         void gauge_status(GaugeField &Umu, GaugeResult &result, double flowt)
         {
+            result.boundaryType = GaugeBoundary::periodic;
+            result.timeDirection = Nd - 1;
+            result.cG = 1.0;
+            result.observableScheme = "periodic-v1";
+            result.temporalPolyakovAvailable = true;
+
             double Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
             double plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
             double rect = WilsonLoops<GImpl>::avgRectangle(Umu);

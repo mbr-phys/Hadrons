@@ -291,12 +291,12 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::execute(void)
     }
     LOG(Message) << " and " << par().steps << " step"
                  << ((par().steps != 1) ? "s." : ".") << std::endl;
-    if (par().gaugeBC == GaugeBoundary::open) {
-        LOG(Warning) << "OBC gauge results retain the existing naive plaquette, "
-                     << "rectangle, clover/topological-charge and Polyakov-loop "
-                     << "diagnostics. The recorded action uses the OBC action; "
-                     << "the temporal Polyakov loop is not a physical closed-loop "
-                     << "observable for open time boundaries." << std::endl;
+    if (par().gaugeBC == GaugeBoundary::open &&
+        std::abs(par().cG - 1.0) > 1.0e-14) {
+        LOG(Message) << "OBC plaquette diagnostics use the flow action boundary "
+                     << "weight (cG=" << par().cG << "); this differs from "
+                     << "openQCD's conventional weighted plaquette when cG != 1."
+                     << std::endl;
     }
     if (!par().maxTau.empty()) {
         maxTau = std::stod(par().maxTau);
