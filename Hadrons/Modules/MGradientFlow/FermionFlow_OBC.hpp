@@ -318,11 +318,11 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
                  << ", using " << par().steps << " step"
                  << ((par().steps > 1) ? "s." : ".") << std::endl;
     std::cout << evolve.SG.LogParameters();
-    if (par().bc == 0) {
-        LOG(Warning) << "FermionFlow_OBC gauge results retain the existing "
-                     << "naive gauge diagnostics; the recorded action uses "
-                     << "the OBC action and the temporal Polyakov loop is not "
-                     << "a physical closed-loop OBC observable." << std::endl;
+    if (par().bc == 0 && std::abs(par().cG - 1.0) > 1.0e-14) {
+        LOG(Message) << "OBC plaquette diagnostics use the flow action boundary "
+                     << "weight (cG=" << par().cG << "); this differs from "
+                     << "openQCD's conventional weighted plaquette when cG != 1."
+                     << std::endl;
     }
 
     // Validate field types and separate into parallel vectors

@@ -16,6 +16,7 @@ EXTRA_PROGRAMS = \
   Test_free_prop            \
   Test_gamma3pt             \
   Test_gradient_flow		\
+  Test_gradient_flow_boundary_comparison \
   Test_hadrons_meson_3pt    \
   Test_hadrons_spectrum     \
   Test_highfreq_stat        \
@@ -71,6 +72,9 @@ Test_gamma3pt_LDADD=-lHadrons -lGrid
 
 Test_gradient_flow_SOURCES=Test_gradient_flow.cpp
 Test_gradient_flow_LDADD=-lHadrons -lGrid
+
+Test_gradient_flow_boundary_comparison_SOURCES=Test_gradient_flow_boundary_comparison.cpp
+Test_gradient_flow_boundary_comparison_LDADD=-lHadrons -lGrid
 
 Test_hadrons_meson_3pt_SOURCES=Test_hadrons_meson_3pt.cpp
 Test_hadrons_meson_3pt_LDADD=-lHadrons -lGrid

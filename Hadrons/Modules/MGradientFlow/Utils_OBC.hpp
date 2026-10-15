@@ -30,6 +30,8 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/GaugeBoundary.hpp>
+#include <cmath>
+#include <limits>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -38,6 +40,8 @@ BEGIN_MODULE_NAMESPACE(MGradientFlow)
 namespace OBC
 {
 
+// Keep this schema in lockstep with MGradientFlow::GaugeResult in Utils.hpp.
+// Utils_OBC is intentionally self-contained so it can replace Utils.hpp.
 class GaugeResult : Serializable
 {
 public:
@@ -51,7 +55,12 @@ public:
                                     std::vector<ComplexD>,  polyakovX,
                                     std::vector<ComplexD>,  polyakovY,
                                     std::vector<ComplexD>,  polyakovZ,
-                                    std::vector<ComplexD>,  polyakovT);
+                                    std::vector<ComplexD>,  polyakovT,
+                                    std::string,            boundaryType,
+                                    int,                    timeDirection,
+                                    double,                 cG,
+                                    std::string,            observableScheme,
+                                    bool,                   temporalPolyakovAvailable);
 };
 
 // Wilson flow implemented through the padded plaquette/rectangle force path.
@@ -197,6 +206,85 @@ class Evolution {
             const OpenGaugeBoundaryParameters &boundaryParameters)
         {
             return FlowAction(cPlaq, cRect, boundaryParameters);
+        }
+
+        RealD loopWeightSum(
+            const GaugeField &U,
+            const std::vector<typename OpenGaugeBoundary<GImpl>::Loop> &loops) const
+        {
+            OpenGaugeBoundary<GImpl> boundary(boundaryParameters_);
+            RealD total = 0.0;
+            for (const auto &loop : loops) {
+                if (loop.coefficient == 0.0) continue;
+                auto weight = boundary.loopWeight(U.Grid(), loop.path);
+                total += real(TensorRemove(sum(weight)));
+            }
+            return total;
+        }
+
+        double actionCompatibleLoopAverage(
+            const GaugeField &U,
+            const std::vector<typename OpenGaugeBoundary<GImpl>::Loop> &loops) const
+        {
+            OpenGaugeBoundary<GImpl> boundary(boundaryParameters_);
+            const RealD weight = loopWeightSum(U, loops);
+            GRID_ASSERT(weight > 0.0);
+            return 1.0 - boundary.action(U, loops)/weight;
+        }
+
+        void maskTemporalEndpoints(GaugeLinkField &field) const
+        {
+            if (!GaugeBoundary::isOpen(gaugeBoundaryType_)) return;
+            field = openTemporalMask_ * field;
+        }
+
+        void fieldStrengthOBC(GaugeLinkField &field, const GaugeField &U,
+                              const int mu, const int nu) const
+        {
+            WilsonLoops<GImpl>::FieldStrength(field, U, mu, nu);
+            maskTemporalEndpoints(field);
+        }
+
+        double topologicalChargeOBC(const GaugeField &U) const
+        {
+            GRID_ASSERT(Nd == 4);
+            const int t = boundaryParameters_.timeDir;
+            std::vector<int> spatial;
+            for (int mu = 0; mu < Nd; ++mu) if (mu != t) spatial.push_back(mu);
+            GRID_ASSERT(spatial.size() == 3);
+
+            GaugeLinkField Bx(U.Grid()), By(U.Grid()), Bz(U.Grid());
+            GaugeLinkField Ex(U.Grid()), Ey(U.Grid()), Ez(U.Grid());
+            fieldStrengthOBC(Bx, U, spatial[1], spatial[2]);
+            fieldStrengthOBC(By, U, spatial[2], spatial[0]);
+            fieldStrengthOBC(Bz, U, spatial[0], spatial[1]);
+            fieldStrengthOBC(Ex, U, t, spatial[0]);
+            fieldStrengthOBC(Ey, U, t, spatial[1]);
+            fieldStrengthOBC(Ez, U, t, spatial[2]);
+
+            const double pi = std::acos(-1.0);
+            ComplexField q(U.Grid());
+            q = (8.0/(32.0*pi*pi))*trace(Bx*Ex + By*Ey + Bz*Ez);
+            return TensorRemove(sum(q)).real();
+        }
+
+        double avgCloverOBC(const GaugeField &U)
+        {
+            ComplexField clov(U.Grid());
+            GaugeLinkField field(U.Grid()), scaledUnit(U.Grid());
+            clov = Zero();
+            scaledUnit = 1.0/Nc;
+            for (int mu = 1; mu < Nd; ++mu) {
+                for (int nu = 0; nu < mu; ++nu) {
+                    fieldStrengthOBC(field, U, mu, nu);
+                    field -= trace(field)*scaledUnit;
+                    clov -= trace(field*field);
+                }
+            }
+            const int nt = U.Grid()->GlobalDimensions()[boundaryParameters_.timeDir];
+            GRID_ASSERT(nt > 2);
+            return TensorRemove(sum(clov)).real() /
+                   (U.Grid()->gSites()*(double(nt - 2)/double(nt)));
         }
 
     public:
@@ -521,15 +609,37 @@ class Evolution {
         // gauge field status //////////////////////////////////////////////////////////
         void gauge_status(GaugeField &Umu, GaugeResult &result, double flowt)
         {
-            double Q = WilsonLoops<GImpl>::TopologicalCharge(Umu);
-            double plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
-            double rect = WilsonLoops<GImpl>::avgRectangle(Umu);
-            double clov = avgClover(Umu);
+            const bool open = GaugeBoundary::isOpen(gaugeBoundaryType_);
+            result.boundaryType = gaugeBoundaryType_;
+            result.timeDirection = boundaryParameters_.timeDir;
+            result.cG = cG_;
+            result.observableScheme = open ? "obc-action-compatible-v1" : "periodic-v1";
+            result.temporalPolyakovAvailable = !open;
+
+            double Q = open ? topologicalChargeOBC(Umu)
+                            : WilsonLoops<GImpl>::TopologicalCharge(Umu);
+            double plaq;
+            double rect;
+            double clov;
+            if (open) {
+                using Boundary = OpenGaugeBoundary<GImpl>;
+                plaq = actionCompatibleLoopAverage(Umu, Boundary::plaquetteLoops(1.0));
+                rect = actionCompatibleLoopAverage(
+                    Umu, Boundary::plaquetteRectangleLoops(0.0, 1.0));
+                clov = avgCloverOBC(Umu);
+            } else {
+                plaq = WilsonLoops<GImpl>::avgPlaquette(Umu);
+                rect = WilsonLoops<GImpl>::avgRectangle(Umu);
+                clov = avgClover(Umu);
+            }
             double act = SG.S(Umu);
             ComplexD polyX = avgPolyakovLoopMu(Umu,0);
             ComplexD polyY = avgPolyakovLoopMu(Umu,1);
             ComplexD polyZ = avgPolyakovLoopMu(Umu,2);
-            ComplexD polyT = avgPolyakovLoopMu(Umu,3);
+            ComplexD polyT = open
+                ? ComplexD(std::numeric_limits<RealD>::quiet_NaN(),
+                           std::numeric_limits<RealD>::quiet_NaN())
+                : avgPolyakovLoopMu(Umu,3);
 
             result.flowtime.push_back(flowt);
             result.plaquette.push_back(plaq);
