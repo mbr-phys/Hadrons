@@ -111,7 +111,7 @@ private:
             const double solutionNorm2 = norm2(solution);
             if (!std::isfinite(solutionNorm2))
             {
-                HADRONS_ERROR(Program, "single-precision Schur " + solver_ + " preconditioner produced a non-finite correction");
+                HADRONS_ERROR(Runtime, "single-precision Schur " + solver_ + " preconditioner produced a non-finite correction");
             }
         }
 

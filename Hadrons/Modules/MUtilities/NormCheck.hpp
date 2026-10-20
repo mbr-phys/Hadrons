@@ -43,7 +43,10 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(NormCheckPar,
                                     std::string, field,
                                     std::string, reference,
-                                    std::string, output);
+                                    std::string, output,
+                                    double,      absoluteTolerance,
+                                    double,      relativeTolerance,
+                                    bool,        failIfExceedTolerance);
 };
 
 template <typename Field>
@@ -130,7 +133,7 @@ void TNormCheck<Field>::execute(void)
         const auto &reference = envGet(Field, par().reference);
         result.referenceNorm2 = norm2(reference);
         result.innerProduct = innerProduct(field, reference);
-        result.differenceNorm2 = result.norm2 + result.referenceNorm2 - 2.0*real(result.innerProduct);
+        result.differenceNorm2 = norm2(field-reference);
 
         const double denominator = std::sqrt(result.referenceNorm2);
         result.relativeDifference = (denominator == 0.0) ? 0.0 : std::sqrt(std::max(0.0, result.differenceNorm2))/denominator;
@@ -144,6 +147,28 @@ void TNormCheck<Field>::execute(void)
                      << ", difference norm2 = " << result.differenceNorm2
                      << ", relative difference = " << result.relativeDifference
                      << std::endl;
+    }
+
+    if (par().failIfExceedTolerance)
+    {
+        double diff = std::sqrt(std::max(0.0, result.differenceNorm2));
+        if (diff > par().absoluteTolerance)
+        {
+            std::ostringstream msg;
+            msg << std::scientific << std::setprecision(3) 
+                << "NormCheck failed: difference of norms = " << diff
+                << " exceeds absolute tolerance = " << par().absoluteTolerance;
+            HADRONS_ERROR(Runtime, msg.str());
+        }
+
+        if (result.relativeDifference > par().relativeTolerance)
+        {
+            std::ostringstream msg;
+            msg << std::scientific << std::setprecision(3) 
+                << "NormCheck failed: relative difference of norms = " << result.relativeDifference
+                << " exceeds relative tolerance = " << par().relativeTolerance;
+            HADRONS_ERROR(Runtime, msg.str());
+        }
     }
 
     saveResult(par().output, "norm_check", result);

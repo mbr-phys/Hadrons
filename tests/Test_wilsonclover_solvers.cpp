@@ -95,6 +95,9 @@ int main(int argc, char *argv[])
     mixedBicgstabPar.outerGuesser        = "";
     application.createModule<MSolver::MixedPrecisionRBPrecBiCGSTAB>("MixedBiCGSTAB", mixedBicgstabPar);
 
+    mixedBicgstabPar.residual            = 1.0e-06;
+    application.createModule<MSolver::MixedPrecisionRBPrecBiCGSTAB>("MixedBiCGSTAB_lowprec", mixedBicgstabPar);
+
     MFermion::GaugeProp::Par propagatorPar;
     propagatorPar.source = "source";
     propagatorPar.solver = "BiCGSTAB";
@@ -112,8 +115,14 @@ int main(int argc, char *argv[])
     propagatorPar.solver = "MixedBiCGSTAB";
     application.createModule<MFermion::GaugeProp>("prop_mixed_bicgstab", propagatorPar);
 
+    propagatorPar.solver = "MixedBiCGSTAB_lowprec";
+    application.createModule<MFermion::GaugeProp>("prop_mixed_bicgstab_lowprec", propagatorPar);
+
     MUtilities::NormCheckPropagator::Par normCheckPar;
     normCheckPar.output = "";
+    normCheckPar.relativeTolerance = 1e-8;
+    normCheckPar.absoluteTolerance = 1e-15;
+    normCheckPar.failIfExceedTolerance = false;
 
     // Fixed-precision FGMRES versus fixed-precision BiCGSTAB.
     normCheckPar.field     = "prop_fgmres";
@@ -147,6 +156,10 @@ int main(int argc, char *argv[])
 
     normCheckPar.field     = "prop_mixed_fgmres_fgmres_inner";
     application.createModule<MUtilities::NormCheckPropagator>("mixed_fgmres_fgmres_inner_vs_mixed_bicgstab", normCheckPar);
+
+    normCheckPar.failIfExceedTolerance = true;
+    normCheckPar.field     = "prop_mixed_bicgstab_lowprec";
+    application.createModule<MUtilities::NormCheckPropagator>("mixed_bicgstab_lowprec_vs_mixed_bicgstab", normCheckPar);
 
     application.saveParameterFile("TestWilsonCloverSolvers.xml");
     application.run();
