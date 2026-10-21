@@ -1,19 +1,30 @@
 /*
- * MixedPrecisionRBPrecFGMRES.hpp, part of Hadrons
+ * MixedPrecisionRBPrecFGMRES.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2026
+ * Copyright (C) 2015 - 2026
+ *
+ * Author: Matthew Black <matthewkblack@protonmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
  * (at your option) any later version.
+ *
+ * Hadrons is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * See the full license in the file "LICENSE" in the top level distribution 
+ * directory.
  */
+
+/*  END LEGAL */
 #ifndef Hadrons_MSolver_MixedPrecisionRBPrecFGMRES_hpp_
 #define Hadrons_MSolver_MixedPrecisionRBPrecFGMRES_hpp_
-
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -36,6 +47,8 @@ public:
                                     unsigned int, maxInnerIteration,
                                     unsigned int, maxOuterIteration,
                                     unsigned int, restartLength,
+                                    std::string , innerSolver,
+                                    unsigned int, innerRestartLength,
                                     double      , innerResidual,
                                     double      , residual,
                                     std::string , outerGuesser);
@@ -51,39 +64,54 @@ public:
     SOLVER_TYPE_ALIASES(FImplOuter,);
     typedef FNonHermitianSchurOpInner SchurFMatInner;
 private:
-    class SchurBiCGSTABPreconditioner:
+    class SchurKrylovPreconditioner:
         public LinearFunction<FermionFieldInner>
     {
     public:
         using LinearFunction<FermionFieldInner>::operator();
 
-        SchurBiCGSTABPreconditioner(SchurFMatInner &op,
-                                    const double residual,
-                                    const unsigned int maxIteration)
+        SchurKrylovPreconditioner(SchurFMatInner &op,
+                                  const std::string &solver,
+                                  const double residual,
+                                  const unsigned int maxIteration,
+                                  const unsigned int restartLength)
         : op_(op)
+        , solver_(solver)
         , residual_(residual)
         , maxIteration_(maxIteration)
+        , restartLength_(restartLength)
         {}
 
         virtual void operator()(const FermionFieldInner &source,
                                 FermionFieldInner &solution)
         {
             solution = Zero();
-            BiCGSTAB<FermionFieldInner> solver(residual_, maxIteration_, false);
-            solver(op_, source, solution);
+            unsigned int iterations = 0;
+            if (solver_ == "BiCGSTAB")
+            {
+                BiCGSTAB<FermionFieldInner> solver(residual_, maxIteration_, false);
+                solver(op_, source, solution);
+                iterations = std::min<unsigned int>(static_cast<unsigned int>(solver.IterationsToComplete), maxIteration_);
+            }
+            else if (solver_ == "FGMRES")
+            {
+                TrivialPrecon<FermionFieldInner> identity;
+                FlexibleGeneralisedMinimalResidual<FermionFieldInner> solver(residual_, maxIteration_, identity, restartLength_, false);
+                solver(op_, source, solution);
+                iterations = std::min<unsigned int>(static_cast<unsigned int>(solver.IterationCount), maxIteration_);
+            }
+            else
+            {
+                HADRONS_ERROR(Argument, "unknown mixed-precision FGMRES inner solver '" + solver_ + "'");
+            }
 
             ++applicationCount_;
-            const auto iterations = std::min<unsigned long long>(
-                static_cast<unsigned long long>(solver.IterationsToComplete),
-                static_cast<unsigned long long>(maxIteration_));
             iterationCount_ += iterations;
 
             const double solutionNorm2 = norm2(solution);
             if (!std::isfinite(solutionNorm2))
             {
-                HADRONS_ERROR(Program,
-                    "single-precision Schur BiCGSTAB preconditioner produced "
-                    "a non-finite correction");
+                HADRONS_ERROR(Runtime, "single-precision Schur " + solver_ + " preconditioner produced a non-finite correction");
             }
         }
 
@@ -98,8 +126,10 @@ private:
         }
     private:
         SchurFMatInner &op_;
+        std::string     solver_;
         double          residual_;
         unsigned int    maxIteration_;
+        unsigned int    restartLength_;
         std::uint64_t   applicationCount_{0};
         std::uint64_t   iterationCount_{0};
     };
@@ -114,12 +144,8 @@ protected:
     virtual void execute(void);
 };
 
-MODULE_REGISTER_TMP(MixedPrecisionRBPrecFGMRES,
-                    ARG(TMixedPrecisionRBPrecFGMRES<FIMPLF, FIMPLD>),
-                    MSolver);
-MODULE_REGISTER_TMP(ZMixedPrecisionRBPrecFGMRES,
-                    ARG(TMixedPrecisionRBPrecFGMRES<ZFIMPLF, ZFIMPLD>),
-                    MSolver);
+MODULE_REGISTER_TMP(MixedPrecisionRBPrecFGMRES, ARG(TMixedPrecisionRBPrecFGMRES<FIMPLF, FIMPLD>), MSolver);
+MODULE_REGISTER_TMP(ZMixedPrecisionRBPrecFGMRES, ARG(TMixedPrecisionRBPrecFGMRES<ZFIMPLF, ZFIMPLD>), MSolver);
 
 /******************************************************************************
  *              TMixedPrecisionRBPrecFGMRES implementation                    *
@@ -176,8 +202,9 @@ ZeroGuesser<FermionFieldOuter> defaultGuesser;                                  
 LinearFunction<FermionFieldOuter> &guesser =                                                 \
     (guesserPt == nullptr) ? defaultGuesser : *guesserPt;                                    \
 SchurFMatInner innerSchur(imat);                                                             \
-SchurBiCGSTABPreconditioner innerPreconditioner(                                             \
-    innerSchur, par().innerResidual, par().maxInnerIteration);                               \
+SchurKrylovPreconditioner innerPreconditioner(                                               \
+    innerSchur, par().innerSolver, par().innerResidual,                                      \
+    par().maxInnerIteration, par().innerRestartLength);                                      \
 MixedPrecisionFlexibleGeneralisedMinimalResidual<                                            \
     FermionFieldOuter, FermionFieldInner> fgmres(                                            \
         par().residual, par().maxOuterIteration, innerGrid,                                  \
@@ -185,11 +212,12 @@ MixedPrecisionFlexibleGeneralisedMinimalResidual<                               
 HADRONS_DEFAULT_NON_HERMITIAN_SCHUR_SOLVE<FermionFieldOuter> schurSolver(fgmres);            \
 schurSolver.subtractGuess(subGuess);                                                         \
 schurSolver(omat, source, sol, guesser);                                                     \
-LOG(Message) << "Mixed-precision FGMRES completed with "                                    \
-             << fgmres.IterationCount << " outer iterations and "                           \
-             << innerPreconditioner.getIterationCount()                                     \
-             << " accumulated inner iterations in "                                         \
-             << innerPreconditioner.getApplicationCount()                                   \
+LOG(Message) << "Mixed-precision FGMRES (" << par().innerSolver                              \
+             << " inner) completed with " << fgmres.IterationCount                           \
+             << " outer iterations and "                                                     \
+             << innerPreconditioner.getIterationCount()                                      \
+             << " accumulated inner iterations in "                                          \
+             << innerPreconditioner.getApplicationCount()                                    \
              << " preconditioner applications" << std::endl;
 
 template <typename FImplInner, typename FImplOuter>
@@ -209,13 +237,22 @@ void TMixedPrecisionRBPrecFGMRES<FImplInner, FImplOuter>::setup(void)
     }
     if (par().restartLength > par().maxOuterIteration)
     {
-        HADRONS_ERROR(Argument,
-                      "FGMRES restart length exceeds maximum outer iteration");
+        HADRONS_ERROR(Argument, "FGMRES restart length exceeds maximum outer iteration");
+    }
+    if ((par().innerSolver != "BiCGSTAB") &&
+        (par().innerSolver != "FGMRES"))
+    {
+        HADRONS_ERROR(Argument, "inner solver must be 'BiCGSTAB' or 'FGMRES'");
+    }
+    if ((par().innerSolver == "FGMRES") &&
+        ((par().innerRestartLength == 0) ||
+         (par().innerRestartLength > par().maxInnerIteration)))
+    {
+        HADRONS_ERROR(Argument, "invalid inner FGMRES restart length");
     }
     if (!std::isfinite(par().innerResidual) || (par().innerResidual < 0.0))
     {
-        HADRONS_ERROR(Argument,
-                      "inner residual must be finite and non-negative");
+        HADRONS_ERROR(Argument, "inner residual must be finite and non-negative");
     }
     if (!std::isfinite(par().residual) || (par().residual <= 0.0))
     {
@@ -226,8 +263,7 @@ void TMixedPrecisionRBPrecFGMRES<FImplInner, FImplOuter>::setup(void)
     const auto outerLs = env().getObjectLs(par().outerAction);
     if (innerLs != outerLs)
     {
-        HADRONS_ERROR(Size,
-                      "inner and outer actions have different fifth dimensions");
+        HADRONS_ERROR(Size, "inner and outer actions have different fifth dimensions");
     }
 
     auto &imat = envGet(FMatInner, par().innerAction);
@@ -237,33 +273,34 @@ void TMixedPrecisionRBPrecFGMRES<FImplInner, FImplOuter>::setup(void)
     const auto &innerDimensions = innerGrid->GlobalDimensions();
     const auto &outerDimensions = outerGrid->GlobalDimensions();
     bool dimensionsMatch = (innerDimensions.size() == outerDimensions.size());
+
     for (int d = 0; dimensionsMatch &&
          (d < static_cast<int>(innerDimensions.size())); ++d)
     {
         dimensionsMatch = (innerDimensions[d] == outerDimensions[d]);
     }
+
     if (!dimensionsMatch)
     {
-        HADRONS_ERROR(Size,
-                      "inner and outer actions have different global dimensions");
+        HADRONS_ERROR(Size, "inner and outer actions have different global dimensions");
     }
 
-    const std::string innerPolicy = (par().innerResidual == 0.0)
-        ? "fixed-work inner mode"
-        : "inner residual " + std::to_string(par().innerResidual);
+    const std::string innerPolicy = (par().innerResidual == 0.0) ? "fixed-work inner mode" : "inner residual " + std::to_string(par().innerResidual);
+
     LOG(Message) << "Setting up mixed-precision non-Hermitian Schur FGMRES for "
                  << "inner/outer action '" << par().innerAction << "'/'"
                  << par().outerAction << "', outer residual " << par().residual
                  << ", maximum outer iteration " << par().maxOuterIteration
                  << ", restart length " << par().restartLength
+                 << ", inner solver " << par().innerSolver
                  << ", maximum inner iteration " << par().maxInnerIteration
+                 << ((par().innerSolver == "FGMRES") ? ", inner restart length " + std::to_string(par().innerRestartLength) : std::string())
                  << ", " << innerPolicy << std::endl;
 
     LinearFunction<FermionFieldOuter> *guesserPt = nullptr;
     if (!par().outerGuesser.empty())
     {
-        guesserPt = &envGet(LinearFunction<FermionFieldOuter>,
-                            par().outerGuesser);
+        guesserPt = &envGet(LinearFunction<FermionFieldOuter>, par().outerGuesser);
     }
 
     auto makeSolver = [&imat, &omat, innerGrid, guesserPt, this](bool subGuess)

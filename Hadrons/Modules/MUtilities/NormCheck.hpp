@@ -1,18 +1,30 @@
 /*
  * NormCheck.hpp, part of Hadrons (https://github.com/aportelli/Hadrons)
  *
- * Copyright (C) 2026
+ * Copyright (C) 2015 - 2026
+ *
+ * Author: Matthew Black <matthewkblack@protonmail.com>
  *
  * Hadrons is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 2 of the License, or
  * (at your option) any later version.
+ *
+ * Hadrons is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with Hadrons.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * See the full license in the file "LICENSE" in the top level distribution 
+ * directory.
  */
+
+/*  END LEGAL */
 #ifndef Hadrons_MUtilities_NormCheck_hpp_
 #define Hadrons_MUtilities_NormCheck_hpp_
-
-#include <algorithm>
-#include <cmath>
 
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
@@ -31,7 +43,10 @@ public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(NormCheckPar,
                                     std::string, field,
                                     std::string, reference,
-                                    std::string, output);
+                                    std::string, output,
+                                    double,      absoluteTolerance,
+                                    double,      relativeTolerance,
+                                    bool,        failIfExceedTolerance);
 };
 
 template <typename Field>
@@ -118,17 +133,13 @@ void TNormCheck<Field>::execute(void)
         const auto &reference = envGet(Field, par().reference);
         result.referenceNorm2 = norm2(reference);
         result.innerProduct = innerProduct(field, reference);
-        result.differenceNorm2 = result.norm2 + result.referenceNorm2
-                               - 2.0*real(result.innerProduct);
+        result.differenceNorm2 = norm2(field-reference);
 
         const double denominator = std::sqrt(result.referenceNorm2);
-        result.relativeDifference = (denominator == 0.0)
-                                  ? 0.0
-                                  : std::sqrt(std::max(0.0, result.differenceNorm2))/denominator;
+        result.relativeDifference = (denominator == 0.0) ? 0.0 : std::sqrt(std::max(0.0, result.differenceNorm2))/denominator;
     }
 
-    LOG(Message) << "NormCheck '" << par().field << "': norm2 = "
-                 << result.norm2 << std::endl;
+    LOG(Message) << "NormCheck '" << par().field << "': norm2 = " << result.norm2 << std::endl;
     if (!par().reference.empty())
     {
         LOG(Message) << "  reference '" << par().reference
@@ -136,6 +147,28 @@ void TNormCheck<Field>::execute(void)
                      << ", difference norm2 = " << result.differenceNorm2
                      << ", relative difference = " << result.relativeDifference
                      << std::endl;
+    }
+
+    if (par().failIfExceedTolerance)
+    {
+        double diff = std::sqrt(std::max(0.0, result.differenceNorm2));
+        if (diff > par().absoluteTolerance)
+        {
+            std::ostringstream msg;
+            msg << std::scientific << std::setprecision(3) 
+                << "NormCheck failed: difference of norms = " << diff
+                << " exceeds absolute tolerance = " << par().absoluteTolerance;
+            HADRONS_ERROR(Runtime, msg.str());
+        }
+
+        if (result.relativeDifference > par().relativeTolerance)
+        {
+            std::ostringstream msg;
+            msg << std::scientific << std::setprecision(3) 
+                << "NormCheck failed: relative difference of norms = " << result.relativeDifference
+                << " exceeds relative tolerance = " << par().relativeTolerance;
+            HADRONS_ERROR(Runtime, msg.str());
+        }
     }
 
     saveResult(par().output, "norm_check", result);
