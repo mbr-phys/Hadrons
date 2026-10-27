@@ -16,6 +16,7 @@ EXTRA_PROGRAMS = \
   Test_free_prop            \
   Test_gradient_flow		\
   Test_hadrons_meson_3pt    \
+  Test_heavy_meson_3pt      \
   Test_hadrons_spectrum     \
   Test_highfreq_stat        \
   Test_result_bundling      \
@@ -87,6 +88,9 @@ Test_stoch_distil_LDADD=-lHadrons -lGrid
 
 Test_stochastic_meson_SOURCES=Test_stochastic_meson.cpp
 Test_stochastic_meson_LDADD=-lHadrons -lGrid
+
+Test_heavy_meson_3pt_SOURCES=Test_heavy_meson_3pt.cpp
+Test_heavy_meson_3pt_LDADD=-lHadrons -lGrid
 
 Test_xi_to_sigma_SOURCES=Test_xi_to_sigma.cpp
 Test_xi_to_sigma_LDADD=-lHadrons -lGrid
