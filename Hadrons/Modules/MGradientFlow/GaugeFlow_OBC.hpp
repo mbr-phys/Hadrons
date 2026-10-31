@@ -325,7 +325,7 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::execute(void)
     evolve.setEnsembleCG(ensembleCG);
     for (const auto &name: getOutput()) {
         if (GaugeBoundary::isMetadataName(name)) {
-            envGet(GaugeBoundaryInfo, name).cG = ensembleCG;
+            (envGet(GaugeBoundaryInfo, name)).cG = ensembleCG;
         }
     }
 

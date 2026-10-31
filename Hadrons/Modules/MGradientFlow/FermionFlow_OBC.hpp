@@ -312,7 +312,7 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
                      << "'; proceeding with module parameters" << std::endl;
     }
     evolve.setEnsembleCG(ensembleCG);
-    envGet(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName()+"_U")).cG =
+    (envGet(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName()+"_U"))).cG =
         ensembleCG;
 
     std::string type = evolve.SG.action_name();
