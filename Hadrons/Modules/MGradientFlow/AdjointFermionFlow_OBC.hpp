@@ -54,7 +54,8 @@ BEGIN_HADRONS_NAMESPACE
  * - steps: number of steps (typically 1 for step-by-step workflow)
  * - step_size: eps (flow step size)
  * - bc: fermion temporal BC (+1 periodic, -1 antiperiodic, 0 fixed)
- * - cG: open gauge-boundary coefficient (used only when bc == 0)
+ * - flowCG: flow-action boundary coefficient (used only when bc == 0); must
+ *   match the forward flow that produced the gauge field and saved stages
  */
 
 /******************************************************************************
@@ -74,7 +75,7 @@ public:
                                     std::string, defaultType,
                                     std::vector<std::string>, outSources,
                                     int, bc,
-                                    double, cG,
+                                    double, flowCG,
                                     int, steps,
                                     double, step_size);
 };
@@ -166,9 +167,9 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::setup(void)
     if (par().bc != -1 && par().bc != 0 && par().bc != 1) {
         HADRONS_ERROR(Argument, "bc must be +1 (periodic), -1 (antiperiodic), or 0 (open)");
     }
-    if (!std::isfinite(par().cG) || par().cG < 0.0) {
+    if (!std::isfinite(par().flowCG) || par().flowCG < 0.0) {
         HADRONS_ERROR(Argument,
-                      "cG must be explicitly set to a finite non-negative value");
+                      "flowCG must be explicitly set to a finite non-negative value");
     }
     if (par().stage1.empty() != par().stage2.empty()) {
         HADRONS_ERROR(Argument, "stage1 and stage2 must either both be set or both be empty");
@@ -201,7 +202,7 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::setup(void)
     const std::string gaugeBc = GaugeBoundary::gaugeTypeFromFermionBc(par().bc);
     envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField), 3.0,
            par().step_size, par().step_size, 0.0,
-           gaugeBc, par().cG, this);
+           gaugeBc, par().flowCG, this);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -212,12 +213,18 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
 
     const std::string expectedGaugeBc =
         GaugeBoundary::gaugeTypeFromFermionBc(par().bc);
+    const std::string expectedAction = evolve.SG.action_name();
     auto validateBoundaryMetadata =
-        [this, &expectedGaugeBc](const std::string &field,
-                                const std::string &role)
+        [this, &expectedGaugeBc, &expectedAction, &evolve](
+            const std::string &field, const std::string &role)
             -> GaugeBoundaryInfo * {
             const std::string metadata = GaugeBoundary::metadataName(field);
             if (!env().hasCreatedObject(metadata)) {
+                if (par().bc == 0) {
+                    HADRONS_ERROR(Argument, "no gauge boundary metadata for " +
+                                  role + " '" + field + "'; open fermion "
+                                  "boundaries need an open gauge field");
+                }
                 LOG(Warning) << "No gauge boundary metadata found for " << role
                              << " '" << field
                              << "'; proceeding with module parameters"
@@ -226,14 +233,24 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
             }
 
             auto &info = envGet(GaugeBoundaryInfo, metadata);
-            const std::string mismatch = GaugeBoundary::compatibilityError(
-                info, expectedGaugeBc, par().cG);
+            std::string mismatch = GaugeBoundary::compatibilityError(
+                info, expectedGaugeBc);
+            if (mismatch.empty()) {
+                // the adjoint must reverse exactly the forward flow
+                mismatch = GaugeBoundary::flowCompatibilityError(
+                    info, expectedAction, evolve.flowCG());
+            }
             if (!mismatch.empty()) {
                 HADRONS_ERROR(Argument,
                               "gauge boundary metadata mismatch for " + role +
                               " '" + field + "': " + mismatch);
             }
             if (!GaugeBoundary::isKnown(info)) {
+                if (par().bc == 0) {
+                    HADRONS_ERROR(Argument, "gauge boundary of " + role + " '" +
+                                  field + "' is unknown; open fermion "
+                                  "boundaries need an open gauge field");
+                }
                 LOG(Warning) << "Gauge boundary metadata for " << role << " '"
                              << field
                              << "' is unknown; proceeding with module parameters"
@@ -252,7 +269,6 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
 
         if ((stage1Info != nullptr) && (stage2Info != nullptr) &&
             stage1Info->hasFlowInfo && stage2Info->hasFlowInfo) {
-            const std::string expectedAction = evolve.SG.action_name();
             auto close = [](const double a, const double b) {
                 const double scale = 1.0 + std::max(std::abs(a), std::abs(b));
                 return std::abs(a - b) <= 1.0e-12 * scale;
@@ -308,7 +324,7 @@ void TAdjointFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
     LOG(Message) << "  fermion temporal BC: " << par().bc << std::endl;
     LOG(Message) << "  gauge temporal BC: " << gaugeBc;
     if (par().bc == 0) {
-        LOG(Message) << " (cG=" << par().cG << ")";
+        LOG(Message) << " (flow cG=" << par().flowCG << ")";
     }
     LOG(Message) << std::endl;
     LOG(Message) << "  steps: " << par().steps << ", step_size: " << par().step_size << std::endl;

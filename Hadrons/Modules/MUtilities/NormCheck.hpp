@@ -38,8 +38,6 @@ BEGIN_MODULE_NAMESPACE(MUtilities)
 class NormCheckPar: Serializable
 {
 public:
-    // reference is optional.  When supplied, the module also reports the
-    // inner product and the relative norm of the difference.
     GRID_SERIALIZABLE_CLASS_MEMBERS(NormCheckPar,
                                     std::string, field,
                                     std::string, reference,
@@ -53,6 +51,7 @@ template <typename Field>
 class TNormCheck: public Module<NormCheckPar>
 {
 public:
+    // innerProduct is <field, reference>; swapping the inputs conjugates it.
     class Result: Serializable
     {
     public:
@@ -61,7 +60,9 @@ public:
                                         double,  referenceNorm2,
                                         Complex, innerProduct,
                                         double,  differenceNorm2,
-                                        double,  relativeDifference);
+                                        double,  relativeDifference,
+                                        double,  tolerance,
+                                        bool,    isClose);
     };
 public:
     TNormCheck(const std::string name);
@@ -118,6 +119,14 @@ void TNormCheck<Field>::setup(void)
     {
         HADRONS_ERROR(Argument, "field must be specified");
     }
+    if (par().absoluteTolerance < 0.0 || par().relativeTolerance < 0.0)
+    {
+        HADRONS_ERROR(Argument, "tolerances must be non-negative");
+    }
+    if (par().failIfExceedTolerance && par().reference.empty())
+    {
+        HADRONS_ERROR(Argument, "reference must be specified when failIfExceedTolerance is set");
+    }
     envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
@@ -135,8 +144,16 @@ void TNormCheck<Field>::execute(void)
         result.innerProduct = innerProduct(field, reference);
         result.differenceNorm2 = norm2(field-reference);
 
-        const double denominator = std::sqrt(result.referenceNorm2);
-        result.relativeDifference = (denominator == 0.0) ? 0.0 : std::sqrt(std::max(0.0, result.differenceNorm2))/denominator;
+        // Symmetric scale: both fields zero implies zero difference, so 0 is correct.
+        const double diff  = std::sqrt(std::max(0.0, result.differenceNorm2));
+        const double scale = std::max(std::sqrt(result.norm2), std::sqrt(result.referenceNorm2));
+        result.relativeDifference = (scale == 0.0) ? 0.0 : diff/scale;
+
+        // symmetric closeness as in Python's math.isclose:
+        // ||field - reference|| <= max(relativeTolerance*max(||field||, ||reference||), absoluteTolerance)
+        result.tolerance = std::max(par().relativeTolerance*scale, par().absoluteTolerance);
+        // Written as <= so that a NaN difference is not close.
+        result.isClose = (diff <= result.tolerance);
     }
 
     LOG(Message) << "NormCheck '" << par().field << "': norm2 = " << result.norm2 << std::endl;
@@ -146,29 +163,22 @@ void TNormCheck<Field>::execute(void)
                      << "': norm2 = " << result.referenceNorm2
                      << ", difference norm2 = " << result.differenceNorm2
                      << ", relative difference = " << result.relativeDifference
+                     << ", tolerance = " << result.tolerance
+                     << ", close = " << (result.isClose ? "true" : "false")
                      << std::endl;
     }
 
-    if (par().failIfExceedTolerance)
+    if (par().failIfExceedTolerance && !result.isClose)
     {
-        double diff = std::sqrt(std::max(0.0, result.differenceNorm2));
-        if (diff > par().absoluteTolerance)
-        {
-            std::ostringstream msg;
-            msg << std::scientific << std::setprecision(3) 
-                << "NormCheck failed: difference of norms = " << diff
-                << " exceeds absolute tolerance = " << par().absoluteTolerance;
-            HADRONS_ERROR(Runtime, msg.str());
-        }
-
-        if (result.relativeDifference > par().relativeTolerance)
-        {
-            std::ostringstream msg;
-            msg << std::scientific << std::setprecision(3) 
-                << "NormCheck failed: relative difference of norms = " << result.relativeDifference
-                << " exceeds relative tolerance = " << par().relativeTolerance;
-            HADRONS_ERROR(Runtime, msg.str());
-        }
+        std::ostringstream msg;
+        msg << std::scientific << std::setprecision(3)
+            << "NormCheck failed: difference norm = "
+            << std::sqrt(std::max(0.0, result.differenceNorm2))
+            << " (relative " << result.relativeDifference << ")"
+            << " exceeds tolerance = " << result.tolerance
+            << " = max(relativeTolerance = " << par().relativeTolerance
+            << " * max norm, absoluteTolerance = " << par().absoluteTolerance << ")";
+        HADRONS_ERROR(Runtime, msg.str());
     }
 
     saveResult(par().output, "norm_check", result);

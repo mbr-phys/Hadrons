@@ -127,11 +127,13 @@ std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getOutput(void)
                 for (std::string q : par().props) {
                     out.push_back(q+"_t"+ftt.str());
                 }
-            } else {
-                for (std::string q : par().outProps) {
-                    out.push_back(q);
-                }
             }
+        }
+    }
+    // outProps hold the fields at the last measurement (the final flow time)
+    if (par().steps > 0) {
+        for (std::string q : par().outProps) {
+            out.push_back(q);
         }
     }
 
@@ -181,36 +183,37 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
         }
     }
 
-    // create output fields
+    // create output fields; outProps are created once and hold the fields
+    // at the last measurement (the final flow time)
     for (int i = 1; i <= par().steps; i++) 
     {
-        if (( i % par().meas_interval == 0) || (i == par().steps)) {
+        if (par().outProps.empty() &&
+            ((i % par().meas_interval == 0) || (i == par().steps))) {
             double ft = par().step_size * i;
             std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << ft;
-            if (par().outProps.empty()) {
-                for (size_t j = 0; j < par().props.size(); j++) {
-                    std::string q = par().props[j];
-                    std::string type = fieldTypes[j];
-                    if (type == "FermionField") {
-                        envCreateLat(FermionField, q+"_t"+ftt.str());
-                    } else if (type == "PropagatorField") {
-                        envCreateLat(PropagatorField, q+"_t"+ftt.str());
-                    } else {
-                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                    }
+            for (size_t j = 0; j < par().props.size(); j++) {
+                std::string q = par().props[j];
+                std::string type = fieldTypes[j];
+                if (type == "FermionField") {
+                    envCreateLat(FermionField, q+"_t"+ftt.str());
+                } else if (type == "PropagatorField") {
+                    envCreateLat(PropagatorField, q+"_t"+ftt.str());
+                } else {
+                    HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
                 }
+            }
+        }
+    }
+    if (par().steps > 0) {
+        for (size_t j = 0; j < par().outProps.size(); j++) {
+            std::string q = par().outProps[j];
+            std::string type = fieldTypes[j];
+            if (type == "FermionField") {
+                envCreateLat(FermionField, q);
+            } else if (type == "PropagatorField") {
+                envCreateLat(PropagatorField, q);
             } else {
-                for (size_t j = 0; j < par().outProps.size(); j++) {
-                    std::string q = par().outProps[j];
-                    std::string type = fieldTypes[j];
-                    if (type == "FermionField") {
-                        envCreateLat(FermionField, q);
-                    } else if (type == "PropagatorField") {
-                        envCreateLat(PropagatorField, q);
-                    } else {
-                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                    }
-                }
+                HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
             }
         }
     }
@@ -303,7 +306,9 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         stopTimer("gauge field flow time "+ftt.str());
 
         // measure gauge observables
-        evolve.gauge_status(Uwf,Uresult,flowt);
+        if ((step % par().meas_interval == 0) || (step == par().steps)) {
+            evolve.gauge_status(Uwf,Uresult,flowt);
+        }
 
         // Flow ALL FermionFields with shared gauge stages
         for (const auto& q : fermionFieldNames) {

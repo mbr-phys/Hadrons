@@ -27,6 +27,9 @@
 #define Hadrons_GaugeBoundary_hpp_
 
 #include <Hadrons/Serialization.hpp>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -36,6 +39,26 @@ namespace GaugeBoundary
 inline constexpr const char *unknown  = "unknown";
 inline constexpr const char *periodic = "periodic";
 inline constexpr const char *open     = "open";
+
+// Open-boundary flow (openQCD wflow.c, Luescher & Schaefer CPC 184 (2013) 519,
+// eqs. (B.2)-(B.4)): the force on the spatial links at x0 = 0 and x0 = T is
+// multiplied by 1/w(x0) = 2. It is independent of cG; with flow cG = 1 the open
+// flow equals the periodic flow of the lattice reflected across both
+// boundaries (the orbifold construction mentioned there).
+inline constexpr double openFlowBoundaryForceFactor = 2.0;
+
+// cG value of an unknown ensemble (periodic gauge field or no declaration)
+inline double unknownCG(void)
+{
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+inline bool closeCG(const double a, const double b)
+{
+    const double scale = 1.0 + std::max(std::abs(a), std::abs(b));
+    return std::isfinite(a) && std::isfinite(b) &&
+           (std::abs(a - b) <= 1.0e-12 * scale);
+}
 
 inline bool isValidType(const std::string &type)
 {
@@ -50,6 +73,13 @@ inline bool isOpen(const std::string &type)
 inline std::string metadataName(const std::string &gaugeName)
 {
     return gaugeName + "_boundary";
+}
+
+inline bool isMetadataName(const std::string &name)
+{
+    const std::string suffix = metadataName("");
+    return (name.size() > suffix.size()) &&
+           (name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0);
 }
 
 inline std::string gaugeTypeFromFermionBc(const int bc)
@@ -97,6 +127,11 @@ inline RealD actionPlaquetteWeight(const Coordinate &dimensions,
 
 } // namespace GaugeBoundary
 
+// cG is the boundary coefficient of the action the ensemble was generated with
+// (NaN if not known) and is passed unchanged through flows. flowCG is the
+// boundary coefficient of the flow action (meaningful when hasFlowInfo). Both
+// use the openQCD weight cG/2 for spatial loops on the open boundary slices
+// (CPC 184 (2013) 519, eq. (A.3)).
 class GaugeBoundaryInfo: public Serializable
 {
 public:
@@ -108,7 +143,8 @@ public:
                                     std::string, flowAction,
                                     double, stepSize,
                                     double, flowTime,
-                                    std::string, stage);
+                                    std::string, stage,
+                                    double, flowCG);
 
     GaugeBoundaryInfo(void)
     : type(GaugeBoundary::unknown)
@@ -117,6 +153,7 @@ public:
     , hasFlowInfo(false)
     , stepSize(0.0)
     , flowTime(0.0)
+    , flowCG(unknownCG())
     {}
 
     GaugeBoundaryInfo(const std::string &type_, const double cG_,
@@ -125,7 +162,8 @@ public:
                       const std::string &flowAction_ = std::string(),
                       const double stepSize_ = 0.0,
                       const double flowTime_ = 0.0,
-                      const std::string &stage_ = std::string())
+                      const std::string &stage_ = std::string(),
+                      const double flowCG_ = unknownCG())
     : type(type_)
     , cG(cG_)
     , userSpecified(userSpecified_)
@@ -134,6 +172,7 @@ public:
     , stepSize(stepSize_)
     , flowTime(flowTime_)
     , stage(stage_)
+    , flowCG(flowCG_)
     {}
 };
 
@@ -145,9 +184,9 @@ inline bool isKnown(const GaugeBoundaryInfo &info)
     return info.type != unknown;
 }
 
+// boundary type only: the ensemble cG and the flow cG are independent
 inline std::string compatibilityError(const GaugeBoundaryInfo &info,
-                                      const std::string &expectedType,
-                                      const double expectedCG)
+                                      const std::string &expectedType)
 {
     if (!isValidType(info.type)) {
         return "metadata contains invalid gauge boundary type '" + info.type + "'";
@@ -162,14 +201,26 @@ inline std::string compatibilityError(const GaugeBoundaryInfo &info,
         return "metadata declares gauge boundary '" + info.type +
                "' but module expects '" + expectedType + "'";
     }
-    if (expectedType == open) {
-        const double scale = 1.0 + std::max(std::abs(info.cG),
-                                            std::abs(expectedCG));
-        if (!std::isfinite(info.cG) ||
-            (std::abs(info.cG - expectedCG) > 1.0e-12 * scale)) {
-            return "metadata declares cG=" + std::to_string(info.cG) +
-                   " but module expects cG=" + std::to_string(expectedCG);
-        }
+
+    return std::string();
+}
+
+// flow provenance: a field produced by a flow must have been flowed with the
+// expected action and, for open boundaries, the expected flow cG
+inline std::string flowCompatibilityError(const GaugeBoundaryInfo &info,
+                                          const std::string &expectedAction,
+                                          const double expectedFlowCG)
+{
+    if (!info.hasFlowInfo) {
+        return std::string();
+    }
+    if (info.flowAction != expectedAction) {
+        return "metadata declares flow action '" + info.flowAction +
+               "' but module expects '" + expectedAction + "'";
+    }
+    if ((info.type == open) && !closeCG(info.flowCG, expectedFlowCG)) {
+        return "metadata declares flow cG=" + std::to_string(info.flowCG) +
+               " but module expects flow cG=" + std::to_string(expectedFlowCG);
     }
 
     return std::string();

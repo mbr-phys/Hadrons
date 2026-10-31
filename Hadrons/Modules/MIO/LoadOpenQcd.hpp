@@ -42,6 +42,11 @@ BEGIN_HADRONS_NAMESPACE
  file    Namestem of the files to read in. In contrast to the LoadNersc
          module, the separator between the namestem and the configuration
          number is 'n' instead of '.' compliant with the openQCD convention.         
+ gaugeBC Temporal gauge boundary of the ensemble: 'unknown', 'periodic' or
+         'open'.
+ cG      Boundary coefficient of the action the ensemble was generated with
+         (openQCD weight cG/2 for spatial plaquettes on x0 = 0, T); used only
+         when gaugeBC is 'open'. Independent of the flow modules' flowCG.
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MIO)
 
@@ -118,8 +123,9 @@ void TLoadOpenQcd<GImpl>::setup(void)
     }
 
     const bool userSpecified = par().gaugeBC != GaugeBoundary::unknown;
+    // ensemble cG: the boundary coefficient of the generating action
     const double effectiveCG = (par().gaugeBC == GaugeBoundary::open)
-                             ? par().cG : 1.0;
+                             ? par().cG : GaugeBoundary::unknownCG();
     envCreateLat(GaugeField, getName());
     envCreate(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName()), 1,
               par().gaugeBC, effectiveCG, userSpecified);
@@ -157,7 +163,6 @@ void TLoadOpenQcd<GImpl>::execute(void)
     }
 
     if (par().gaugeBC == GaugeBoundary::open) {
-        using Boundary = OpenGaugeBoundary<GImpl>;
         const Coordinate dimensions = U.Grid()->GlobalDimensions();
         const int nt = dimensions[Nd - 1];
         if (nt < 2) {
@@ -170,17 +175,26 @@ void TLoadOpenQcd<GImpl>::execute(void)
         const RealD actionWeight =
             GaugeBoundary::actionPlaquetteWeight(dimensions, par().cG);
 
-        const auto loops = Boundary::plaquetteLoops(1.0);
-        Boundary openQcdBoundary(
-            OpenGaugeBoundaryParameters::Open(Nd - 1, 1.0));
-        const RealD openQcdAction = openQcdBoundary.action(U, loops);
-        const RealD weightedGrid = 1.0 - openQcdAction / openQcdWeight;
+        const auto openQcd = WilsonLoops<GImpl>::treeLevelPlaquetteAverage(
+            U, OpenGaugeBoundaryParameters::Open(Nd - 1, par().cG));
+        const auto cGAction = WilsonLoops<GImpl>::actionCompatiblePlaquetteAverage(
+            U, OpenGaugeBoundaryParameters::Open(Nd - 1, par().cG));
+        const RealD weightedGrid = openQcd.value;
         const RealD weightedRaw = RealD(GImpl::num_colours) * weightedGrid;
+        const RealD actionWeighted = cGAction.value;
 
-        Boundary actionBoundary(
-            OpenGaugeBoundaryParameters::Open(Nd - 1, par().cG));
-        const RealD cGAction = actionBoundary.action(U, loops);
-        const RealD actionWeighted = 1.0 - cGAction / actionWeight;
+        // cross-check of Grid's weight sums against the closed forms; remove
+        // the GaugeBoundary helpers once validated
+        auto checkWeight = [](const RealD grid, const RealD expected,
+                              const std::string &what) {
+            if (std::abs(grid - expected) > 1.0e-10 * expected) {
+                HADRONS_ERROR(Logic, what + " plaquette weight sum mismatch: Grid "
+                              + std::to_string(grid) + ", expected "
+                              + std::to_string(expected));
+            }
+        };
+        checkWeight(openQcd.weightSum, openQcdWeight, "openQCD");
+        checkWeight(cGAction.weightSum, actionWeight, "action");
 
         LOG(Message) << "openQCD OBC-weighted plaquette (Grid-normalised): "
                      << weightedGrid << std::endl;

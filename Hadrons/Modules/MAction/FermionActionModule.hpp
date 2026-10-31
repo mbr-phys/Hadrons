@@ -4,6 +4,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Hadrons/GaugeBoundary.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 BEGIN_MODULE_NAMESPACE(MAction)
@@ -18,6 +19,9 @@ public:
 protected:
     template <typename ImplPar>
     void parseBoundary(ImplPar &implParams);
+private:
+    template <typename ImplPar>
+    void checkGaugeBoundary(const ImplPar &implParams);
 };
 
 template <typename Par>
@@ -60,6 +64,50 @@ void FermionActionModule<Par>::parseBoundary(ImplPar &implParams)
     if (implParams.twist_n_2pi_L.size() != this->env().getNd())
     {
         HADRONS_ERROR(Size, "Wrong number of twist");
+    }
+    checkGaugeBoundary(implParams);
+}
+
+// The temporal fermion boundary must match the gauge field's declared boundary:
+// an open gauge field needs a fixed (zero-phase) temporal fermion boundary,
+// otherwise the operator hops across the unused link T -> 0 (error). A fixed
+// fermion boundary on a periodic or undeclared gauge field is allowed but
+// unusual (warning). Single- and double-precision actions are checked alike
+// since the gauge precision cast forwards the metadata.
+template <typename Par>
+template <typename ImplPar>
+void FermionActionModule<Par>::checkGaugeBoundary(const ImplPar &implParams)
+{
+    const std::string gauge    = this->par().gauge;
+    const std::string metadata = GaugeBoundary::metadataName(gauge);
+    const bool        fixed    =
+        (std::abs(implParams.boundary_phases[this->env().getNd() - 1]) == 0.);
+
+    if (this->env().hasCreatedObject(metadata))
+    {
+        auto &info = envGet(GaugeBoundaryInfo, metadata);
+
+        if ((info.type == GaugeBoundary::open) && !fixed)
+        {
+            HADRONS_ERROR(Argument, "gauge field '" + gauge + "' has open temporal "
+                          "boundaries but the temporal fermion boundary phase "
+                          "is not 0");
+        }
+        else if ((info.type == GaugeBoundary::periodic) && fixed)
+        {
+            LOG(Warning) << "fixed temporal fermion boundary on gauge field '"
+                         << gauge << "', which is declared periodic" << std::endl;
+        }
+        else if (!GaugeBoundary::isKnown(info) && fixed)
+        {
+            LOG(Warning) << "fixed temporal fermion boundary on gauge field '"
+                         << gauge << "', whose boundary is unknown" << std::endl;
+        }
+    }
+    else if (fixed)
+    {
+        LOG(Warning) << "fixed temporal fermion boundary on gauge field '"
+                     << gauge << "', which has no boundary metadata" << std::endl;
     }
 }
 

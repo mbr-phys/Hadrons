@@ -44,9 +44,25 @@ public:
     Solver(SolverFn fn, FMat &mat): mat_(mat), fn_(fn), vfn_(nullptr) {}
     Solver(SolverFn fn, SolverVFn vfn, FMat &mat): mat_(mat), fn_(fn), vfn_(vfn) {}
 
+    // Wilson-clover with fixed temporal boundaries (time phase 0) has zero rows
+    // on t = 0 and t = T-1, so source components there can never be solved
+    // for: they are projected out of the source, and out of the solution.
     void operator()(FermionField &sol, const FermionField &src)
     {
-        fn_(sol, src);
+        auto project = boundaryProjector();
+
+        if (!project)
+        {
+            fn_(sol, src);
+        }
+        else
+        {
+            FermionField projSrc(src);
+
+            projectSource(project, projSrc);
+            fn_(sol, projSrc);
+            project(sol);
+        }
     }
 
     void operator()(std::vector<FermionField> &sol, const std::vector<FermionField> &src)
@@ -55,16 +71,32 @@ public:
         {
             HADRONS_ERROR(Size, "source and solution vectors size mismatch");
         }
+        auto project = boundaryProjector();
+
         if (vfn_ == nullptr)
         {
             for (unsigned int i = 0; i < sol.size(); ++i)
             {
-                fn_(sol[i], src[i]);
+                (*this)(sol[i], src[i]);
             }
+        }
+        else if (!project)
+        {
+            vfn_(sol, src);
         }
         else
         {
-            vfn_(sol, src);
+            std::vector<FermionField> projSrc(src);
+
+            for (auto &s: projSrc)
+            {
+                projectSource(project, s);
+            }
+            vfn_(sol, projSrc);
+            for (auto &s: sol)
+            {
+                project(s);
+            }
         }
     }
 
@@ -73,6 +105,49 @@ public:
         return mat_;
     }
 private:
+    typedef std::function<void(FermionField &)> Projector;
+
+    // empty unless mat_ is a compact Wilson(-exp)-clover operator with fixed
+    // temporal boundaries
+    Projector boundaryProjector(void)
+    {
+        if constexpr (std::is_same<FImpl, WilsonImplF>::value
+                      or std::is_same<FImpl, WilsonImplD>::value)
+        {
+            if (auto *m = dynamic_cast<CompactWilsonClover<FImpl> *>(&mat_))
+            {
+                if (m->fixedBoundaries)
+                {
+                    return [m](FermionField &f){ m->ApplyBoundaryProjection(f); };
+                }
+            }
+            if (auto *m = dynamic_cast<CompactWilsonExpClover<FImpl> *>(&mat_))
+            {
+                if (m->fixedBoundaries)
+                {
+                    return [m](FermionField &f){ m->ApplyBoundaryProjection(f); };
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
+    static void projectSource(const Projector &project, FermionField &src)
+    {
+        RealD before = norm2(src), removed;
+
+        project(src);
+        removed = before - norm2(src);
+        if (removed > 0.)
+        {
+            LOG(Message) << "Fixed temporal boundaries: removed "
+                         << std::sqrt(removed/before)
+                         << " (relative norm) of the source on the boundary slices"
+                         << std::endl;
+        }
+    }
+
     FMat      &mat_;
     SolverFn  fn_;
     SolverVFn vfn_;

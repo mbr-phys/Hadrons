@@ -30,6 +30,7 @@
 #include <Hadrons/Global.hpp>
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
+#include <Hadrons/GaugeBoundary.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -60,6 +61,9 @@ public:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    // gauge boundary metadata of the input, forwarded to the output
+    bool hasBoundaryMetadata(void);
 };
 
 MODULE_REGISTER_TMP(GaugeSinglePrecisionCast, 
@@ -86,10 +90,23 @@ TPrecisionCast<FieldIn, FieldOut>::TPrecisionCast(const std::string name)
 
 // dependencies/products ///////////////////////////////////////////////////////
 template <typename FieldIn, typename FieldOut>
+bool TPrecisionCast<FieldIn, FieldOut>::hasBoundaryMetadata(void)
+{
+    const std::string metadata = GaugeBoundary::metadataName(par().field);
+
+    return env().hasObject(metadata) && (env().getObjectModule(metadata) >= 0);
+}
+
+template <typename FieldIn, typename FieldOut>
 std::vector<std::string> TPrecisionCast<FieldIn, FieldOut>::getInput(void)
 {
     std::vector<std::string> in = {par().field};
     
+    if (hasBoundaryMetadata())
+    {
+        in.push_back(GaugeBoundary::metadataName(par().field));
+    }
+
     return in;
 }
 
@@ -98,6 +115,11 @@ std::vector<std::string> TPrecisionCast<FieldIn, FieldOut>::getOutput(void)
 {
     std::vector<std::string> out = {getName()};
     
+    if (hasBoundaryMetadata())
+    {
+        out.push_back(GaugeBoundary::metadataName(getName()));
+    }
+
     return out;
 }
 
@@ -106,6 +128,12 @@ template <typename FieldIn, typename FieldOut>
 void TPrecisionCast<FieldIn, FieldOut>::setup(void)
 {
     envCreateLat(FieldOut, getName());
+    if (hasBoundaryMetadata())
+    {
+        auto &info = envGet(GaugeBoundaryInfo, GaugeBoundary::metadataName(par().field));
+
+        envCreate(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName()), 1, info);
+    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -120,6 +148,12 @@ void TPrecisionCast<FieldIn, FieldOut>::execute(void)
     auto &out = envGet(FieldOut, getName());
 
     precisionChange(out, in);
+    if (hasBoundaryMetadata())
+    {
+        // copied again: flow modules complete their metadata in execute()
+        envGet(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName())) =
+            envGet(GaugeBoundaryInfo, GaugeBoundary::metadataName(par().field));
+    }
 }
 
 END_MODULE_NAMESPACE

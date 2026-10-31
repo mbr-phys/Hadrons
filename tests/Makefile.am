@@ -18,6 +18,7 @@ EXTRA_PROGRAMS = \
   Test_gradient_flow		\
   Test_gradient_flow_boundary_comparison \
   Test_hadrons_meson_3pt    \
+  Test_obc_flow_reflection  \
   Test_hadrons_spectrum     \
   Test_highfreq_stat        \
   Test_result_bundling      \
@@ -76,6 +77,9 @@ Test_gradient_flow_LDADD=-lHadrons -lGrid
 
 Test_gradient_flow_boundary_comparison_SOURCES=Test_gradient_flow_boundary_comparison.cpp
 Test_gradient_flow_boundary_comparison_LDADD=-lHadrons -lGrid
+
+Test_obc_flow_reflection_SOURCES=Test_obc_flow_reflection.cpp
+Test_obc_flow_reflection_LDADD=-lHadrons -lGrid
 
 Test_hadrons_meson_3pt_SOURCES=Test_hadrons_meson_3pt.cpp
 Test_hadrons_meson_3pt_LDADD=-lHadrons -lGrid

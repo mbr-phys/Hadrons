@@ -48,7 +48,9 @@ BEGIN_HADRONS_NAMESPACE
  *             "PropagatorField"). If empty, defaultType is used for all.    *
  *  - defaultType: default field type when propTypes is empty                 *
  *  - bc: fermion temporal BC: +1 periodic, -1 antiperiodic, 0 fixed *
- *  - cG: open gauge-boundary coefficient (used only when bc == 0)       *
+ *  - flowCG: flow-action boundary coefficient (used only when bc == 0);     *
+ *    the spatial boundary force is doubled, flowCG = 1 is openQCD's flow.   *
+ *    The ensemble cG is read from the gauge metadata and passed through.    *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MGradientFlow)
 
@@ -63,7 +65,7 @@ public:
                                     std::vector<std::string>, outProps,
                                     std::string, gauge,
                                     int, bc,
-                                    double, cG,
+                                    double, flowCG,
                                     int, steps,
                                     double, step_size,
                                     int, meas_interval);
@@ -145,11 +147,13 @@ std::vector<std::string> TFermionFlow_OBC<FImpl,GImpl,FlowAction>::getOutput(voi
                 for (std::string q : par().props) {
                     out.push_back(q+"_t"+ftt.str());
                 }
-            } else {
-                for (std::string q : par().outProps) {
-                    out.push_back(q);
-                }
             }
+        }
+    }
+    // outProps hold the fields at the last measurement (the final flow time)
+    if (par().steps > 0) {
+        for (std::string q : par().outProps) {
+            out.push_back(q);
         }
     }
 
@@ -172,20 +176,22 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::setup(void)
     if (!std::isfinite(par().step_size) || par().step_size <= 0.0) {
         HADRONS_ERROR(Argument, "step_size must be finite and positive");
     }
-    if (!std::isfinite(par().cG) || par().cG < 0.0) {
+    if (!std::isfinite(par().flowCG) || par().flowCG < 0.0) {
         HADRONS_ERROR(Argument,
-                      "cG must be explicitly set to a finite non-negative value");
+                      "flowCG must be explicitly set to a finite non-negative value");
     }
 
     envCreateLat(GaugeField, getName()+"_U");
     const std::string effectiveGaugeBc =
         GaugeBoundary::gaugeTypeFromFermionBc(par().bc);
-    const double effectiveCG = (par().bc == 0) ? par().cG : 1.0;
+    const double flowCG = (par().bc == 0) ? par().flowCG
+                                          : GaugeBoundary::unknownCG();
+    // the ensemble cG is copied from the input metadata in execute()
     envCreate(GaugeBoundaryInfo,
               GaugeBoundary::metadataName(getName()+"_U"), 1,
-              effectiveGaugeBc, effectiveCG, true,
+              effectiveGaugeBc, GaugeBoundary::unknownCG(), true,
               true, "WilsonAction", par().step_size,
-              par().steps * par().step_size, "field");
+              par().steps * par().step_size, "field", flowCG);
 
     // Validate props and propTypes
     if (!par().propTypes.empty() && (par().props.size() != par().propTypes.size())) {
@@ -220,43 +226,44 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::setup(void)
         }
     }
 
-    // create output fields
+    // create output fields; outProps are created once and hold the fields
+    // at the last measurement (the final flow time)
     for (int i = 1; i <= par().steps; i++) 
     {
-        if (( i % par().meas_interval == 0) || (i == par().steps)) {
+        if (par().outProps.empty() &&
+            ((i % par().meas_interval == 0) || (i == par().steps))) {
             double ft = par().step_size * i;
             std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << ft;
-            if (par().outProps.empty()) {
-                for (size_t j = 0; j < par().props.size(); j++) {
-                    std::string q = par().props[j];
-                    std::string type = fieldTypes[j];
-                    if (type == "FermionField") {
-                        envCreateLat(FermionField, q+"_t"+ftt.str());
-                    } else if (type == "PropagatorField") {
-                        envCreateLat(PropagatorField, q+"_t"+ftt.str());
-                    } else {
-                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                    }
+            for (size_t j = 0; j < par().props.size(); j++) {
+                std::string q = par().props[j];
+                std::string type = fieldTypes[j];
+                if (type == "FermionField") {
+                    envCreateLat(FermionField, q+"_t"+ftt.str());
+                } else if (type == "PropagatorField") {
+                    envCreateLat(PropagatorField, q+"_t"+ftt.str());
+                } else {
+                    HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
                 }
+            }
+        }
+    }
+    if (par().steps > 0) {
+        for (size_t j = 0; j < par().outProps.size(); j++) {
+            std::string q = par().outProps[j];
+            std::string type = fieldTypes[j];
+            if (type == "FermionField") {
+                envCreateLat(FermionField, q);
+            } else if (type == "PropagatorField") {
+                envCreateLat(PropagatorField, q);
             } else {
-                for (size_t j = 0; j < par().outProps.size(); j++) {
-                    std::string q = par().outProps[j];
-                    std::string type = fieldTypes[j];
-                    if (type == "FermionField") {
-                        envCreateLat(FermionField, q);
-                    } else if (type == "PropagatorField") {
-                        envCreateLat(PropagatorField, q);
-                    } else {
-                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                    }
-                }
+                HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
             }
         }
     }
     envCreate(HadronsSerializable, getName(), 1, 0);
     const std::string gaugeBc = GaugeBoundary::gaugeTypeFromFermionBc(par().bc);
     envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField), 3.0,
-           par().step_size, -1.0, par().step_size, gaugeBc, par().cG, this);
+           par().step_size, -1.0, par().step_size, gaugeBc, par().flowCG, this);
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -269,24 +276,44 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
         GaugeBoundary::gaugeTypeFromFermionBc(par().bc);
     const std::string inputMetadata =
         GaugeBoundary::metadataName(par().gauge);
+    double ensembleCG = GaugeBoundary::unknownCG();
     if (env().hasCreatedObject(inputMetadata)) {
         auto &info = envGet(GaugeBoundaryInfo, inputMetadata);
-        const std::string mismatch = GaugeBoundary::compatibilityError(
-            info, expectedGaugeBc, par().cG);
+        std::string mismatch = GaugeBoundary::compatibilityError(
+            info, expectedGaugeBc);
+        if (mismatch.empty()) {
+            // the fermion flow must continue the flow that produced the gauge
+            mismatch = GaugeBoundary::flowCompatibilityError(
+                info, evolve.SG.action_name(), evolve.flowCG());
+        }
         if (!mismatch.empty()) {
             HADRONS_ERROR(Argument,
                           "gauge boundary metadata mismatch for '" +
                           par().gauge + "': " + mismatch);
         }
         if (!GaugeBoundary::isKnown(info)) {
+            if (par().bc == 0) {
+                HADRONS_ERROR(Argument, "gauge boundary of '" + par().gauge +
+                              "' is unknown; open fermion boundaries need "
+                              "an open gauge field");
+            }
             LOG(Warning) << "Gauge boundary metadata for '" << par().gauge
                          << "' is unknown; proceeding with module parameters"
                          << std::endl;
         }
+        ensembleCG = info.cG;
     } else {
+        if (par().bc == 0) {
+            HADRONS_ERROR(Argument, "no gauge boundary metadata for '" +
+                          par().gauge + "'; open fermion boundaries need "
+                          "an open gauge field");
+        }
         LOG(Warning) << "No gauge boundary metadata found for '" << par().gauge
                      << "'; proceeding with module parameters" << std::endl;
     }
+    evolve.setEnsembleCG(ensembleCG);
+    envGet(GaugeBoundaryInfo, GaugeBoundary::metadataName(getName()+"_U")).cG =
+        ensembleCG;
 
     std::string type = evolve.SG.action_name();
     std::string ga = "GaugeAction";
@@ -314,16 +341,11 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
                  << ((par().props.size() > 1) ? "s" : "")
                  << " with " << bcName << " temporal fermion boundary conditions and "
                  << gaugeBc << " temporal gauge boundary conditions"
-                 << ((par().bc == 0) ? " (cG=" + std::to_string(par().cG) + ")" : "")
+                 << ((par().bc == 0) ? " (flow cG=" + std::to_string(par().flowCG) +
+                                       ", ensemble cG=" + std::to_string(ensembleCG) + ")" : "")
                  << ", using " << par().steps << " step"
                  << ((par().steps > 1) ? "s." : ".") << std::endl;
     std::cout << evolve.SG.LogParameters();
-    if (par().bc == 0 && std::abs(par().cG - 1.0) > 1.0e-14) {
-        LOG(Message) << "OBC plaquette diagnostics use the flow action boundary "
-                     << "weight (cG=" << par().cG << "); this differs from "
-                     << "openQCD's conventional weighted plaquette when cG != 1."
-                     << std::endl;
-    }
 
     // Validate field types and separate into parallel vectors
     std::vector<std::string> fermionFieldNames;
@@ -378,7 +400,9 @@ void TFermionFlow_OBC<FImpl,GImpl,FlowAction>::execute(void)
         stopTimer("gauge field flow time "+ftt.str());
 
         // measure gauge observables
-        evolve.gauge_status(Uwf,Uresult,flowt);
+        if ((step % par().meas_interval == 0) || (step == par().steps)) {
+            evolve.gauge_status(Uwf,Uresult,flowt);
+        }
 
         // Flow ALL FermionFields with shared gauge stages
         for (const auto& q : fermionFieldNames) {

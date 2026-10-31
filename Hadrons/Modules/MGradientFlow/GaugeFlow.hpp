@@ -174,10 +174,10 @@ void TGaugeFlow<GImpl,FlowAction>::setup(void)
     if constexpr (std::is_same_v<FlowAction, PlaqPlusRectangleAction<GImpl>>) {
         envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField), 
             std::stod(par().c_plaq), std::stod(par().c_rect), par().step_size, 
-            mTau, par().step_size, this);
+            mTau, 0.0, this);
     } else {
         envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField), 3.0, 
-            par().step_size, mTau, par().step_size, this);
+            par().step_size, mTau, 0.0, this);
     }
     // create action -> if c_plaq and c_rect are used, called PlaqPlusRectangleAction
     if constexpr (std::is_same_v<FlowAction, PlaqPlusRectangleAction<GImpl>>) {
@@ -228,11 +228,12 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
             unsigned int step = 0;
             do {
                 step++;
-                flowt += evolve.epsilon;
-                LOG(Message) << "Step " << step << " (tau = "<< flowt << ")" << std::endl;
                 startTimer("evolution");
                 evolve.evolve_gauge_adaptive(Uwf);
                 stopTimer("evolution");
+                // taus is the flow time reached, after any clipping at maxTau
+                flowt = evolve.taus;
+                LOG(Message) << "Step " << step << " (tau = "<< flowt << ")" << std::endl;
                 if (step % par().meas_interval == 0) {
                     LOG(Message) << "Compute observables" << std::endl;
                     startTimer("observables");

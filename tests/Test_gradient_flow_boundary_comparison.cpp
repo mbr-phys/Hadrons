@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
     obcPeriodicPar.save_history   = false;
     obcPeriodicPar.save_rk_stages = false;
     obcPeriodicPar.gaugeBC        = GaugeBoundary::periodic;
-    obcPeriodicPar.cG             = 1.0;
+    obcPeriodicPar.flowCG        = 1.0;
     application.createModule<MGradientFlow::WilsonFlow_OBC>("obc_periodic", obcPeriodicPar);
 
     // (c) OBC-capable module operating with an open temporal gauge boundary.
@@ -69,7 +69,7 @@ int main(int argc, char *argv[])
     obcOpenPar.save_history   = false;
     obcOpenPar.save_rk_stages = false;
     obcOpenPar.gaugeBC        = GaugeBoundary::open;
-    obcOpenPar.cG             = 1.0;
+    obcOpenPar.flowCG        = 1.0;
     application.createModule<MGradientFlow::WilsonFlow_OBC>("obc_open", obcOpenPar);
 
     MIO::WriteResultGroup::Par bundlePar;

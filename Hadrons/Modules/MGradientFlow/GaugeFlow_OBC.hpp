@@ -38,6 +38,12 @@ BEGIN_HADRONS_NAMESPACE
 
 /******************************************************************************
  *             Gauge-field gradient flow with explicit gauge BC              *
+ *                                                                            *
+ *  - gaugeBC: temporal gauge boundary, 'periodic' or 'open'                  *
+ *  - flowCG: boundary coefficient of the flow action (open only): spatial    *
+ *    loops on x0 = 0, T get weight flowCG/2, and the force on the spatial    *
+ *    boundary links is doubled. flowCG = 1 is openQCD's Wilson flow. The     *
+ *    ensemble cG is read from the input metadata and passed through.         *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MGradientFlow)
 
@@ -53,7 +59,7 @@ public:
                                     bool, save_history,
                                     bool, save_rk_stages,
                                     std::string, gaugeBC,
-                                    double, cG,
+                                    double, flowCG,
                                     std::string, maxTau,
                                     std::string, c_plaq,
                                     std::string, c_rect);
@@ -89,7 +95,14 @@ TGaugeFlow_OBC<GImpl, FlowAction>::TGaugeFlow_OBC(const std::string name)
 template <typename GImpl, typename FlowAction>
 std::vector<std::string> TGaugeFlow_OBC<GImpl, FlowAction>::getInput(void)
 {
-    return {par().gauge};
+    std::vector<std::string> in = {par().gauge};
+    const std::string gaugeMetadata = GaugeBoundary::metadataName(par().gauge);
+    if (env().hasObject(gaugeMetadata) &&
+        (env().getObjectModule(gaugeMetadata) >= 0)) {
+        in.push_back(gaugeMetadata);
+    }
+
+    return in;
 }
 
 template <typename GImpl, typename FlowAction>
@@ -152,9 +165,9 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::setup(void)
         (par().gaugeBC == GaugeBoundary::unknown)) {
         HADRONS_ERROR(Argument, "gaugeBC must be 'periodic' or 'open'");
     }
-    if (!std::isfinite(par().cG) || par().cG < 0.0) {
+    if (!std::isfinite(par().flowCG) || par().flowCG < 0.0) {
         HADRONS_ERROR(Argument,
-                      "cG must be explicitly set to a finite non-negative value");
+                      "flowCG must be explicitly set to a finite non-negative value");
     }
     if (par().steps < 0) {
         HADRONS_ERROR(Argument, "steps must be non-negative");
@@ -206,8 +219,8 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::setup(void)
         }
     }
 
-    const double effectiveCG = (par().gaugeBC == GaugeBoundary::open)
-                             ? par().cG : 1.0;
+    const double flowCG = (par().gaugeBC == GaugeBoundary::open)
+                        ? par().flowCG : GaugeBoundary::unknownCG();
     std::string actionName;
     if constexpr (std::is_same_v<FlowAction, OBC::WilsonAction<GImpl>>) {
         actionName = "WilsonAction";
@@ -218,12 +231,14 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::setup(void)
         actionName = "PlaqPlusRectangleAction";
     }
     auto createBoundaryInfo =
-        [this, effectiveCG, &actionName](const std::string &field,
-                                        const double flowTime,
-                                        const std::string &stage) {
+        [this, flowCG, &actionName](const std::string &field,
+                                    const double flowTime,
+                                    const std::string &stage) {
+            // the ensemble cG is copied from the input metadata in execute()
             envCreate(GaugeBoundaryInfo, GaugeBoundary::metadataName(field), 1,
-                      par().gaugeBC, effectiveCG, true,
-                      true, actionName, par().step_size, flowTime, stage);
+                      par().gaugeBC, GaugeBoundary::unknownCG(), true,
+                      true, actionName, par().step_size, flowTime, stage,
+                      flowCG);
         };
 
     envCreateLat(GaugeField, getName() + "_U");
@@ -264,12 +279,12 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::setup(void)
     if constexpr (std::is_same_v<FlowAction,
                                  PlaqPlusRectangleAction<GImpl>>) {
         envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField),
-               cPlaq, cRect, par().step_size, maxTau, par().step_size,
-               par().gaugeBC, par().cG, this);
+               cPlaq, cRect, par().step_size, maxTau, 0.0,
+               par().gaugeBC, par().flowCG, this);
     } else {
         envTmp(EvolutionType, "evolve", 1, envGetGrid(GaugeField), 3.0,
-               par().step_size, maxTau, par().step_size,
-               par().gaugeBC, par().cG, this);
+               par().step_size, maxTau, 0.0,
+               par().gaugeBC, par().flowCG, this);
     }
 }
 
@@ -282,22 +297,48 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::execute(void)
     auto &U      = envGet(GaugeField, par().gauge);
     auto &Uwf    = envGet(GaugeField, getName() + "_U");
 
+    double ensembleCG = GaugeBoundary::unknownCG();
+    const std::string inputMetadata = GaugeBoundary::metadataName(par().gauge);
+    if (env().hasCreatedObject(inputMetadata)) {
+        auto &info = envGet(GaugeBoundaryInfo, inputMetadata);
+        std::string mismatch = GaugeBoundary::compatibilityError(info, par().gaugeBC);
+        if (!mismatch.empty()) {
+            HADRONS_ERROR(Argument, "gauge boundary metadata mismatch for '" +
+                          par().gauge + "': " + mismatch);
+        }
+        mismatch = GaugeBoundary::flowCompatibilityError(
+            info, evolve.SG.action_name(), evolve.flowCG());
+        if (!mismatch.empty()) {
+            LOG(Warning) << "Continuing a flow of '" << par().gauge
+                         << "' with a different flow: " << mismatch << std::endl;
+        }
+        if (!GaugeBoundary::isKnown(info)) {
+            LOG(Warning) << "Gauge boundary metadata for '" << par().gauge
+                         << "' is unknown; proceeding with module parameters"
+                         << std::endl;
+        }
+        ensembleCG = info.cG;
+    } else {
+        LOG(Warning) << "No gauge boundary metadata found for '" << par().gauge
+                     << "'; proceeding with module parameters" << std::endl;
+    }
+    evolve.setEnsembleCG(ensembleCG);
+    for (const auto &name: getOutput()) {
+        if (GaugeBoundary::isMetadataName(name)) {
+            envGet(GaugeBoundaryInfo, name).cG = ensembleCG;
+        }
+    }
+
     double maxTau = -1.0;
     LOG(Message) << "Setting up gauge gradient flow on '" << par().gauge
                  << "' with " << par().gaugeBC
                  << " temporal gauge boundary conditions";
     if (par().gaugeBC == GaugeBoundary::open) {
-        LOG(Message) << " (cG=" << par().cG << ")";
+        LOG(Message) << " (flow cG=" << par().flowCG
+                     << ", ensemble cG=" << ensembleCG << ")";
     }
     LOG(Message) << " and " << par().steps << " step"
                  << ((par().steps != 1) ? "s." : ".") << std::endl;
-    if (par().gaugeBC == GaugeBoundary::open &&
-        std::abs(par().cG - 1.0) > 1.0e-14) {
-        LOG(Message) << "OBC plaquette diagnostics use the flow action boundary "
-                     << "weight (cG=" << par().cG << "); this differs from "
-                     << "openQCD's conventional weighted plaquette when cG != 1."
-                     << std::endl;
-    }
     if (!par().maxTau.empty()) {
         maxTau = std::stod(par().maxTau);
         LOG(Message) << "Using adaptive algorithm with maxTau = "
@@ -323,12 +364,13 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::execute(void)
             unsigned int step = 0;
             do {
                 ++step;
-                flowt += evolve.epsilon;
-                LOG(Message) << "Step " << step << " (tau = " << flowt
-                             << ")" << std::endl;
                 startTimer("evolution");
                 evolve.evolve_gauge_adaptive(Uwf);
                 stopTimer("evolution");
+                // taus is the flow time reached, after any clipping at maxTau
+                flowt = evolve.taus;
+                LOG(Message) << "Step " << step << " (tau = " << flowt
+                             << ")" << std::endl;
                 if (step % par().meas_interval == 0) {
                     LOG(Message) << "Compute observables" << std::endl;
                     startTimer("observables");

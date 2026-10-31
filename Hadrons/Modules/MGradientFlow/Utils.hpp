@@ -144,8 +144,19 @@ class Evolution {
         GridBase *grid_;
         GaugeLinkField linkBuf_;
         GaugeField zBuf1_, zBuf2_, uBuf1_, uBuf2_;
-        TimerArray &timer_;
+        TimerArray *timer_;
         std::vector<GaugeField> Wi_;
+
+        // the timer array is optional (nullptr: no timing)
+        void startTimer(const std::string &name)
+        {
+            if (timer_) timer_->startTimer(name);
+        }
+
+        void stopTimer(const std::string &name)
+        {
+            if (timer_) timer_->stopTimer(name);
+        }
 
     public:
         double epsilon, maxTau, taus;
@@ -155,7 +166,7 @@ class Evolution {
         Evolution(GridBase *grid, double beta, double step, double mTau, double ts, TimerArray *timer = nullptr) 
         : SG(FlowAction(beta)), epsilon(step), maxTau(mTau), taus(ts)
         , grid_(grid), linkBuf_(grid), zBuf1_(grid), zBuf2_(grid)
-        , uBuf1_(grid), uBuf2_(grid), timer_(*timer)
+        , uBuf1_(grid), uBuf2_(grid), timer_(timer)
         {
             Wi_.resize(5, grid);
         }
@@ -164,7 +175,7 @@ class Evolution {
         Evolution(GridBase *grid, double c_plaq, double c_rect, double step, double mTau, double ts, TimerArray *timer = nullptr) 
         : SG(FlowAction(c_plaq, c_rect)), epsilon(step), maxTau(mTau), taus(ts)
         , grid_(grid), linkBuf_(grid), zBuf1_(grid), zBuf2_(grid)
-        , uBuf1_(grid), uBuf2_(grid), timer_(*timer)
+        , uBuf1_(grid), uBuf2_(grid), timer_(timer)
         {
             Wi_.resize(5, grid);
         }
@@ -218,26 +229,26 @@ class Evolution {
 
         void gauge_RK(GaugeField &U) {
             Wi_[0] = U;                                     // W0
-            timer_.startTimer("evolution_deriv");
+            startTimer("evolution_deriv");
             SG.deriv(U, zBuf1_);       
-            timer_.stopTimer("evolution_deriv");                         
+            stopTimer("evolution_deriv");                         
             zBuf1_ *= 0.25;                                 // Z0 = 1/4 * F(U)
             GImpl::update_field(zBuf1_, U, -2.0*epsilon);   // U = W1 = exp(ep*Z0)*W0
             Wi_[1] = U;                                     // W1
 
             zBuf1_ *= -17.0/8.0;
-            timer_.startTimer("evolution_deriv");
+            startTimer("evolution_deriv");
             SG.deriv(U,uBuf1_); 
-            timer_.stopTimer("evolution_deriv");
+            stopTimer("evolution_deriv");
             zBuf1_ += uBuf1_;                                // -17/32*Z0 + Z1
             zBuf1_ *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
             GImpl::update_field(zBuf1_, U, -2.0*epsilon);    // U = W2 = exp(ep*Z)*W1
             Wi_[2] = U;                                      // W2
 
             zBuf1_ *= -4.0/3.0;
-            timer_.startTimer("evolution_deriv");
+            startTimer("evolution_deriv");
             SG.deriv(U,uBuf1_); 
-            timer_.stopTimer("evolution_deriv");
+            stopTimer("evolution_deriv");
             zBuf1_ += uBuf1_;                                // 4/3*(17/36*Z0 -8/9*Z1) + Z2
             zBuf1_ *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(zBuf1_, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2

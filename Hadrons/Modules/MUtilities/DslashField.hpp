@@ -30,6 +30,7 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Hadrons/GaugeBoundary.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -43,6 +44,10 @@ BEGIN_HADRONS_NAMESPACE
  * - input: input field (FermionField or PropagatorField)
  * - gauge: gauge field at same flow time as input
  * - output: name for output field (default: <name>_out)
+ *
+ * Open temporal boundaries are read from the gauge field's metadata. The input
+ * and output are then set to zero on x0 = 0 and x0 = T (the fermion fields of
+ * the open theory live on 0 < x0 < T), so the unused link T -> 0 never enters.
  */
 
 /******************************************************************************
@@ -80,6 +85,9 @@ public:
 private:
     // Helper function to compute Dslash on a field
     void computeDslash(Field &out, const Field &in, const GaugeField &U);
+    // zero the field on the two temporal boundary slices
+    void maskTemporalBoundary(Field &f);
+    bool hasBoundaryMetadata(void);
 };
 
 MODULE_REGISTER_TMP(DslashFieldFermion, 
@@ -103,7 +111,17 @@ template <typename FImpl, typename Field>
 std::vector<std::string> TDslashField<FImpl, Field>::getInput(void)
 {
     std::vector<std::string> in = {par().input, par().gauge};
+    if (hasBoundaryMetadata()) {
+        in.push_back(GaugeBoundary::metadataName(par().gauge));
+    }
     return in;
+}
+
+template <typename FImpl, typename Field>
+bool TDslashField<FImpl, Field>::hasBoundaryMetadata(void)
+{
+    const std::string metadata = GaugeBoundary::metadataName(par().gauge);
+    return env().hasObject(metadata) && (env().getObjectModule(metadata) >= 0);
 }
 
 template <typename FImpl, typename Field>
@@ -126,6 +144,7 @@ void TDslashField<FImpl, Field>::setup(void)
         outName = getName() + "_out";
     }
     envCreateLat(Field, outName);
+    envTmpLat(Field, "inMasked");
 }
 
 // execution ///////////////////////////////////////////////////////////////////
@@ -144,10 +163,48 @@ void TDslashField<FImpl, Field>::execute(void)
     }
     auto &out = envGet(Field, outName);
     
+    bool open = false;
+    const std::string metadata = GaugeBoundary::metadataName(par().gauge);
+    if (env().hasCreatedObject(metadata)) {
+        auto &info = envGet(GaugeBoundaryInfo, metadata);
+        open = (info.type == GaugeBoundary::open);
+        if (!GaugeBoundary::isKnown(info)) {
+            LOG(Warning) << "Gauge boundary of '" << par().gauge << "' is unknown; "
+                         << "assuming periodic temporal boundaries" << std::endl;
+        }
+    } else {
+        LOG(Warning) << "No gauge boundary metadata for '" << par().gauge << "'; "
+                     << "assuming periodic temporal boundaries" << std::endl;
+    }
+
     // Compute Dslash = gamma^mu D_mu (symmetric covariant derivative)
-    computeDslash(out, in, U);
+    if (open) {
+        LOG(Message) << "Open temporal boundaries: input and output are zero on "
+                     << "x0 = 0, T" << std::endl;
+        envGetTmp(Field, inMasked);
+        inMasked = in;
+        maskTemporalBoundary(inMasked);
+        computeDslash(out, inMasked, U);
+        maskTemporalBoundary(out);
+    } else {
+        computeDslash(out, in, U);
+    }
     
     LOG(Message) << "Dslash computation complete. Output: '" << outName << "'" << std::endl;
+}
+
+// helper: open temporal boundary mask /////////////////////////////////////////
+template <typename FImpl, typename Field>
+void TDslashField<FImpl, Field>::maskTemporalBoundary(Field &f)
+{
+    Lattice<iScalar<vInteger>> t(f.Grid());
+    Field                      zero(f.Grid());
+    const int                  tMax = f.Grid()->GlobalDimensions()[Nd - 1] - 1;
+
+    LatticeCoordinate(t, Nd - 1);
+    zero = Zero();
+    f    = where(t == 0, zero, f);
+    f    = where(t == tMax, zero, f);
 }
 
 // helper: compute Dslash //////////////////////////////////////////////////////
