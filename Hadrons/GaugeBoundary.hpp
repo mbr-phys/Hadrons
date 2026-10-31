@@ -153,7 +153,7 @@ public:
     , hasFlowInfo(false)
     , stepSize(0.0)
     , flowTime(0.0)
-    , flowCG(unknownCG())
+    , flowCG(GaugeBoundary::unknownCG())
     {}
 
     GaugeBoundaryInfo(const std::string &type_, const double cG_,
@@ -163,7 +163,7 @@ public:
                       const double stepSize_ = 0.0,
                       const double flowTime_ = 0.0,
                       const std::string &stage_ = std::string(),
-                      const double flowCG_ = unknownCG())
+                      const double flowCG_ = GaugeBoundary::unknownCG())
     : type(type_)
     , cG(cG_)
     , userSpecified(userSpecified_)

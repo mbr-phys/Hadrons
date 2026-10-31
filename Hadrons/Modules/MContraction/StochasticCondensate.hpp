@@ -49,6 +49,11 @@ BEGIN_HADRONS_NAMESPACE
  * - Scalar condensate: gammas="Identity", c_fl=0.5 (tree-level Wilson) or 0 (DWF)
  * - Pseudoscalar: gammas="Gamma5", c_fl=0
  * - Derivative condensate: use DslashField first, then gammas="Identity"
+ *
+ * Each result holds the volume sum (condensate) and the per-timeslice sums
+ * (slices, summed over space), so that a bulk window can be chosen with open
+ * temporal boundaries. With fixed-BC solves the noise is zero on the boundary
+ * slices, so those entries vanish.
  */
 
 /******************************************************************************
@@ -78,7 +83,8 @@ public:
         GRID_SERIALIZABLE_CLASS_MEMBERS(Result,
                                         Gamma::Algebra, gamma,
                                         double, c_fl,
-                                        Complex, condensate);
+                                        Complex, condensate,
+                                        std::vector<Complex>, slices);
     };
 public:
     // constructor
@@ -194,10 +200,14 @@ void TStochasticCondensate<FImpl, Field>::execute(void)
         }
 
         //result[i].condensate = TensorRemove(sum(integrand));
+        auto sliced = sliceSum(integrand, Tp);
+
         result[i].condensate = 0.;
-        for (auto &slice : sliceSum(integrand, Tp))
+        result[i].slices.resize(sliced.size());
+        for (unsigned int t = 0; t < sliced.size(); ++t)
         {
-            result[i].condensate += TensorRemove(slice);
+            result[i].slices[t]   = TensorRemove(sliced[t]);
+            result[i].condensate += result[i].slices[t];
         }
         LOG(Message) << "Condensate (" << gammaList[i] << ") = "
                      << result[i].condensate << std::endl;

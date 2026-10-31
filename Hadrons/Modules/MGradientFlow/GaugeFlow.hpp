@@ -234,7 +234,8 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
                 // taus is the flow time reached, after any clipping at maxTau
                 flowt = evolve.taus;
                 LOG(Message) << "Step " << step << " (tau = "<< flowt << ")" << std::endl;
-                if (step % par().meas_interval == 0) {
+                // always measure the final flow time
+                if ((step % par().meas_interval == 0) || !(evolve.taus < mTau)) {
                     LOG(Message) << "Compute observables" << std::endl;
                     startTimer("observables");
                     evolve.gauge_status(Uwf,result,flowt);
@@ -248,7 +249,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
                 startTimer("evolution");
                 std::vector<GaugeField> &Wi = evolve.evolve_gauge(Uwf);
                 stopTimer("evolution");
-                if (step % par().meas_interval == 0) {
+                if ((step % par().meas_interval == 0) || (step == par().steps)) {
                     LOG(Message) << "Compute observables" << std::endl;
                     startTimer("observables");
                     evolve.gauge_status(Uwf,result,flowt);

@@ -162,16 +162,25 @@ int main(int argc, char *argv[])
     MUtilities::NormCheckPropagator::Par backwardNormPar;
     backwardNormPar.field = "xi_t0.00";
     backwardNormPar.reference = chiName;
+    backwardNormPar.relativeTolerance = 1e-8;
+    backwardNormPar.absoluteTolerance = 1e-15;
+    backwardNormPar.failIfExceedTolerance = false;
     application.createModule<MUtilities::NormCheckPropagator>("BackwardNorm", backwardNormPar);
 
     MUtilities::NormCheckPropagator::Par forwardNormPar;
     forwardNormPar.field = etaName;
     forwardNormPar.reference = "chi_t0.01";
+    forwardNormPar.relativeTolerance = 1e-8;
+    forwardNormPar.absoluteTolerance = 1e-15;
+    forwardNormPar.failIfExceedTolerance = false;
     application.createModule<MUtilities::NormCheckPropagator>("ForwardNorm", forwardNormPar);
 
     MUtilities::NormCheckPropagator::Par stageNormPar;
     stageNormPar.field = "xi_t0.00";
     stageNormPar.reference = "xi_reconstructed_t0.00";
+    stageNormPar.relativeTolerance = 1e-8;
+    stageNormPar.absoluteTolerance = 1e-15;
+    stageNormPar.failIfExceedTolerance = false;
     application.createModule<MUtilities::NormCheckPropagator>("StageNorm", stageNormPar);
 
     // Condensate from the adjoint-flow path: D xi_propagator = xi at flow

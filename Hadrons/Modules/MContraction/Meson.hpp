@@ -37,6 +37,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/TimerArray.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Grid/algorithms/blas/MomentumProject.h>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -54,6 +55,11 @@ BEGIN_HADRONS_NAMESPACE
 
            Special values: "all" - perform all possible contractions.
  - sink: module to compute the sink to use in contraction (string).
+ - momProjector: momentum projector module (MUtilities::MomentumProjectorList
+                 or MPScalar) used instead of sink to project onto all its
+                 momenta at once (string, optional). Exclusive with sink.
+                 The result then holds, per gamma pair, the momenta (integer
+                 vectors) and corr indexed as [momentum][time].
 */
 
 /******************************************************************************
@@ -71,7 +77,8 @@ public:
                                     std::string, q2,
                                     std::string, gammas,
                                     std::string, sink,
-                                    std::string, output);
+                                    std::string, output,
+                                    std::string, momProjector);
 };
 
 template <typename FImpl1, typename FImpl2>
@@ -82,6 +89,7 @@ public:
     FERM_TYPE_ALIASES(FImpl2, 2);
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
+    using MPType = MomentumProject<ComplexField1, ComplexField1>;
     class Result: Serializable
     {
     public:
@@ -89,6 +97,15 @@ public:
                                         Gamma::Algebra, gamma_snk,
                                         Gamma::Algebra, gamma_src,
                                         std::vector<Complex>, corr);
+    };
+    class MomResult: Serializable
+    {
+    public:
+        GRID_SERIALIZABLE_CLASS_MEMBERS(MomResult,
+                                        Gamma::Algebra, gamma_snk,
+                                        Gamma::Algebra, gamma_src,
+                                        std::vector<std::vector<int>>, momentum,
+                                        std::vector<std::vector<Complex>>, corr);
     };
 public:
     // constructor
@@ -176,6 +193,11 @@ std::vector<std::string> TMeson<FImpl1, FImpl2>::getInput(void)
     {
         input.push_back(par().sink);
     }
+    if (!par().momProjector.empty())
+    {
+        input.push_back(par().momProjector);
+        input.push_back(par().momProjector + "_momList");
+    }
     
     return input;
 }
@@ -203,6 +225,10 @@ std::vector<std::string> TMeson<FImpl1, FImpl2>::getOutputFiles(void)
 template <typename FImpl1, typename FImpl2>
 void TMeson<FImpl1, FImpl2>::setup(void)
 {
+    if (!par().sink.empty() and !par().momProjector.empty())
+    {
+        HADRONS_ERROR(Argument, "sink and momProjector cannot both be set");
+    }
     envTmpLat(LatticeComplex, "c");
     envTmpLat(LatticePropagator, "q1Gq2");
     envCreate(HadronsSerializable, getName(), 1, 0);
@@ -227,6 +253,8 @@ void TMeson<FImpl1, FImpl2>::execute(void)
     
     std::vector<TComplex>  buf;
     std::vector<Result>    result;
+    std::vector<MomResult> momResult;
+    const bool             projected = !par().momProjector.empty();
     Gamma                  g5(Gamma::Algebra::Gamma5);
     int                    nt = env().getDim(Tp);
 
@@ -243,6 +271,10 @@ void TMeson<FImpl1, FImpl2>::execute(void)
         auto &q1 = envGet(SlicedPropagator1, par().q1);
         auto &q2 = envGet(SlicedPropagator2, par().q2);
         
+        if (projected)
+        {
+            HADRONS_ERROR(Argument, "momProjector cannot be used with already sinked propagators");
+        }
         LOG(Message) << "(propagator already sinked)" << std::endl;
         unsigned int i = 0;
         for(auto &ss: gammaMap)
@@ -272,11 +304,20 @@ void TMeson<FImpl1, FImpl2>::execute(void)
         
         envGetTmp(LatticeComplex, c);
         envGetTmp(LatticePropagator, q1Gq2);
-        if (par().sink.empty())
+        if (par().sink.empty() and !projected)
         {
-            HADRONS_ERROR(Definition, "no sink provided");
+            HADRONS_ERROR(Definition, "no sink or momProjector provided");
         }
-        LOG(Message) << "(using sink '" << par().sink << "')" << std::endl;
+        if (projected)
+        {
+            LOG(Message) << "(using momentum projector '" << par().momProjector
+                         << "')" << std::endl;
+            momResult.resize(nGammas);
+        }
+        else
+        {
+            LOG(Message) << "(using sink '" << par().sink << "')" << std::endl;
+        }
         unsigned int i = 0;
         for(auto &ss: gammaMap)
         {
@@ -289,7 +330,34 @@ void TMeson<FImpl1, FImpl2>::execute(void)
             {
                 Gamma gSrc(gammaSource);
                 std::string ns;
-                    
+
+                if (projected)
+                {
+                    auto &momList = envGet(std::vector<std::vector<int>>,
+                                           par().momProjector + "_momList");
+                    auto &mp      = envGet(MPType, par().momProjector);
+
+                    startTimer("mesonConnected");
+                    c = trace(mesonConnected2(q1Gq2, gSrc));
+                    stopTimer("mesonConnected");
+                    startTimer("momentumProject");
+                    mp.Project(c, buf);
+                    stopTimer("momentumProject");
+                    momResult[i].gamma_snk = gSnk.g;
+                    momResult[i].gamma_src = gSrc.g;
+                    momResult[i].momentum  = momList;
+                    momResult[i].corr.resize(momList.size());
+                    for (unsigned int m = 0; m < momList.size(); ++m)
+                    {
+                        momResult[i].corr[m].resize(nt);
+                        for (int t = 0; t < nt; ++t)
+                        {
+                            momResult[i].corr[m][t] = TensorRemove(buf[t + nt*m]);
+                        }
+                    }
+                    i++;
+                    continue;
+                }
                 ns = vm().getModuleNamespace(env().getObjectModule(par().sink));
                 if (ns == "MSource")
                 {
@@ -324,10 +392,18 @@ void TMeson<FImpl1, FImpl2>::execute(void)
         }
     }
     startTimer("I/O");
-    saveResult(par().output, "meson", result);
-    stopTimer("I/O");
     auto &out = envGet(HadronsSerializable, getName());
-    out = result;
+    if (projected)
+    {
+        saveResult(par().output, "meson", momResult);
+        out = momResult;
+    }
+    else
+    {
+        saveResult(par().output, "meson", result);
+        out = result;
+    }
+    stopTimer("I/O");
 }
 
 END_MODULE_NAMESPACE

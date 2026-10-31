@@ -31,6 +31,7 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Grid/algorithms/blas/MomentumProject.h>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -46,6 +47,11 @@ BEGIN_HADRONS_NAMESPACE
  - current:    current to be inserted (Current::Vector or Current::Axial)
  - dir:        index for direction to take current in (unsigned int, 0 1 2 3)
  - output:     output file if not using Serialization (string)
+ - momProjector: momentum projector module (MUtilities::MomentumProjectorList
+               or MPScalar), used instead of moms to project onto all its
+               momenta at once (string, optional; exclusive with moms). The
+               results then hold the momenta (integer vectors) and
+               corr[momentum][time], one result per direction and gamma.
 */
 
 /******************************************************************************
@@ -64,7 +70,8 @@ public:
                                     std::vector<std::string>,  moms,
                                     Current,                   current,
                                     std::vector<unsigned int>, dirs,
-                                    std::string,               output);
+                                    std::string,               output,
+                                    std::string,               momProjector);
 };
 
 template <typename FImpl>
@@ -72,6 +79,7 @@ class TContractConservedSink: public Module<ContractConservedSinkPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
+    using MPType = MomentumProject<ComplexField, ComplexField>;
     class Result: Serializable
     {
     public:
@@ -81,6 +89,16 @@ public:
                                         Gamma::Algebra,       gamma_src,
                                         std::string,          momentum,
                                         std::vector<Complex>, corr);
+    };
+    class MomResult: Serializable
+    {
+    public:
+        GRID_SERIALIZABLE_CLASS_MEMBERS(MomResult,
+                                        unsigned int,                      direction,
+                                        Current,                           current,
+                                        Gamma::Algebra,                    gamma_src,
+                                        std::vector<std::vector<int>>,     momentum,
+                                        std::vector<std::vector<Complex>>, corr);
     };
 public:
     // constructor
@@ -127,7 +145,15 @@ TContractConservedSink<FImpl>::TContractConservedSink(const std::string name)
 template <typename FImpl>
 std::vector<std::string> TContractConservedSink<FImpl>::getInput(void)
 {
-    return { par().prop, par().action, par().source };
+    std::vector<std::string> in = { par().prop, par().action, par().source };
+
+    if (!par().momProjector.empty())
+    {
+        in.push_back(par().momProjector);
+        in.push_back(par().momProjector + "_momList");
+    }
+
+    return in;
 }
 
 template <typename FImpl>
@@ -142,6 +168,10 @@ std::vector<std::string> TContractConservedSink<FImpl>::getOutput(void)
 template <typename FImpl>
 void TContractConservedSink<FImpl>::setup(void)
 {
+    if (!par().moms.empty() and !par().momProjector.empty())
+    {
+        HADRONS_ERROR(Argument, "moms and momProjector cannot both be set");
+    }
     // The propagator can be 4d or 5d, but must match the action
     const unsigned int ActionLs_{ env().getObjectLs(par().action) };
     Ls_ = env().getObjectLs( par().prop );
@@ -207,6 +237,49 @@ void TContractConservedSink<FImpl>::execute(void)
     SlicedComplex sumGC(nt);
 
     std::vector<Result> results;
+
+    if (!par().momProjector.empty())
+    {
+        // contract each current once, trace once per source gamma, and
+        // project onto every momentum with a single GEMM
+        auto &mp      = envGet(MPType, par().momProjector);
+        auto &momList = envGet(std::vector<std::vector<int>>, par().momProjector + "_momList");
+        std::vector<MomResult>                       momResults;
+        std::vector<typename ComplexField::scalar_object> buf;
+
+        LOG(Message) << "Using momentum projector '" << par().momProjector << "' ("
+                     << momList.size() << " momenta)" << std::endl;
+        for (unsigned int mu : par().dirs)
+        {
+            LOG(Message) << "Getting conserved " << par().current << " current sink for direction " << mu << std::endl;    
+            act.ContractConservedCurrent(prop, prop, tmp, phys_source, par().current, mu);
+
+            for (unsigned int g = 0; g < gSrcs.size(); g++) 
+            {
+                MomResult result;
+
+                LOG(Message) << "Contracting with gSrc = " << gvec[g] << std::endl;
+                tmp_current = trace(gSrcs[g]*tmp);
+                mp.Project(tmp_current, buf);
+                result.direction = mu;
+                result.gamma_src = gvec[g];
+                result.current   = par().current;
+                result.momentum  = momList;
+                result.corr.resize(momList.size(), std::vector<Complex>(nt));
+                for (unsigned int m = 0; m < momList.size(); ++m)
+                for (int t = 0; t < nt; ++t)
+                {
+                    result.corr[m][t] = TensorRemove(buf[t + nt*m]);
+                }
+                momResults.push_back(result);
+            }
+        }
+        saveResult(par().output, "conservedSink", momResults);
+        auto &out = envGet(HadronsSerializable, getName());
+        out = momResults;
+
+        return;
+    }
 
     std::vector<std::string> momenta(par().moms);
     if (par().moms.empty())

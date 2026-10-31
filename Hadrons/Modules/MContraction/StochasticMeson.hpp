@@ -31,6 +31,7 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Grid/algorithms/blas/MomentumProject.h>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -61,6 +62,10 @@ BEGIN_HADRONS_NAMESPACE
  * - etaB:  noise field for noise B
  * - gammas: gamma matrix pairs "(Gamma_sink Gamma_source)..."
  * - sink:   spatial momentum projector (MSink module name)
+ * - momProjector: momentum projector module (MUtilities::MomentumProjectorList
+ *                 or MPScalar), used instead of sink to project onto all its
+ *                 momenta at once. Exclusive with sink. The result then holds
+ *                 the momenta (integer vectors) and corr[momentum][time].
  * - sourceTime: centre time of the source bilinear
  * - noiseA/noiseB: labels from one common per-source-time noise pool
  * - flowTime: fermion flow time recorded with the result
@@ -89,7 +94,8 @@ public:
                                     unsigned int, noiseB,
                                     double, flowTime,
                                     std::string, output,
-                                    unsigned int, detSrc);
+                                    unsigned int, detSrc,
+                                    std::string, momProjector);
 };
 
 template <typename FImpl1, typename FImpl2>
@@ -100,6 +106,7 @@ public:
     FERM_TYPE_ALIASES(FImpl2, 2);
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
+    using MPType = MomentumProject<ComplexField1, ComplexField1>;
     
     class Result: Serializable
     {
@@ -112,6 +119,19 @@ public:
                                         unsigned int, noise_a,
                                         unsigned int, noise_b,
                                         std::vector<Complex>, corr);
+    };
+    class MomResult: Serializable
+    {
+    public:
+        GRID_SERIALIZABLE_CLASS_MEMBERS(MomResult,
+                                        Gamma::Algebra, gamma_snk,
+                                        Gamma::Algebra, gamma_src,
+                                        double, flow_time,
+                                        unsigned int, source_time,
+                                        unsigned int, noise_a,
+                                        unsigned int, noise_b,
+                                        std::vector<std::vector<int>>, momentum,
+                                        std::vector<std::vector<Complex>>, corr);
     };
     
 public:
@@ -201,6 +221,11 @@ std::vector<std::string> TStochasticMeson<FImpl1, FImpl2>::getInput(void)
     {
         input.push_back(par().sink);
     }
+    if (!par().momProjector.empty())
+    {
+        input.push_back(par().momProjector);
+        input.push_back(par().momProjector + "_momList");
+    }
     
     return input;
 }
@@ -228,6 +253,10 @@ std::vector<std::string> TStochasticMeson<FImpl1, FImpl2>::getOutputFiles(void)
 template <typename FImpl1, typename FImpl2>
 void TStochasticMeson<FImpl1, FImpl2>::setup(void)
 {
+    if (!par().sink.empty() and !par().momProjector.empty())
+    {
+        HADRONS_ERROR(Argument, "sink and momProjector cannot both be set");
+    }
     envTmpLat(LatticeComplex, "c");
     envCreate(HadronsSerializable, getName(), 1, 0);
 }
@@ -251,7 +280,9 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
                  << " phiB='" << par().phiB << "', etaB='" << par().etaB << "'"
                  << std::endl;
 
-    std::vector<Result> result;
+    std::vector<Result>    result;
+    std::vector<MomResult> momResult;
+    const bool             projected = !par().momProjector.empty();
     Gamma g5(Gamma::Algebra::Gamma5);
     int nt = env().getDim(Tp);
     if (par().sourceTime >= static_cast<unsigned int>(nt))
@@ -281,19 +312,43 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
     auto &phiB = envGet(PropagatorField2, par().phiB);
     auto &etaB  = envGet(PropagatorField2, par().etaB);
     
-    if (par().sink.empty())
-    {
-        HADRONS_ERROR(Definition, "no sink provided");
-    }
+    SinkFnScalar                  *sink    = nullptr;
+    MPType                        *mp      = nullptr;
+    std::vector<std::vector<int>> *momList = nullptr;
 
-    LOG(Message) << "(using sink '" << par().sink << "')" << std::endl;
-
-    std::string sinkNs = vm().getModuleNamespace(env().getObjectModule(par().sink));
-    if (sinkNs != "MSink")
+    if (projected)
     {
-        HADRONS_ERROR(Definition, "sink must be an MSink module");
+        LOG(Message) << "(using momentum projector '" << par().momProjector
+                     << "')" << std::endl;
+        mp      = &envGet(MPType, par().momProjector);
+        momList = &envGet(std::vector<std::vector<int>>, par().momProjector + "_momList");
+        momResult.resize(nGammas);
+        for (auto &r: momResult)
+        {
+            r.source_time = par().sourceTime;
+            r.noise_a     = par().noiseA;
+            r.noise_b     = par().noiseB;
+            r.flow_time   = par().flowTime;
+            r.momentum    = *momList;
+            r.corr.resize(momList->size(), std::vector<Complex>(nt));
+        }
     }
-    SinkFnScalar &sink = envGet(SinkFnScalar, par().sink);
+    else
+    {
+        if (par().sink.empty())
+        {
+            HADRONS_ERROR(Definition, "no sink or momProjector provided");
+        }
+
+        LOG(Message) << "(using sink '" << par().sink << "')" << std::endl;
+
+        std::string sinkNs = vm().getModuleNamespace(env().getObjectModule(par().sink));
+        if (sinkNs != "MSink")
+        {
+            HADRONS_ERROR(Definition, "sink must be an MSink module");
+        }
+        sink = &envGet(SinkFnScalar, par().sink);
+    }
 
     // Use global lattice coordinates, rather than local grid indices, so the
     // source-time restriction and sink slicing work with a distributed time direction.
@@ -325,24 +380,46 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
             // Q = phiB^dag g5 Gamma_sink phiA.  Gamma5 hermiticity puts
             // both wall-noise factors at the source rather than at the sink.
             c = trace(adj(phiB) * g5 * gSnk * phiA * P);
-            std::vector<TComplex> buf = sink(c);
-            for (int dt = 0; dt < nt; ++dt)
+            if (projected)
             {
-                result[i].corr[dt] = TensorRemove(buf[dt]);
+                std::vector<TComplex> buf;
+
+                mp->Project(c, buf);
+                for (unsigned int m = 0; m < momList->size(); ++m)
+                for (int dt = 0; dt < nt; ++dt)
+                {
+                    momResult[i].corr[m][dt] = TensorRemove(buf[dt + nt*m]);
+                }
+                momResult[i].gamma_snk = gSnk.g;
+                momResult[i].gamma_src = gSrc.g;
             }
-            
-            result[i].gamma_snk = gSnk.g;
-            result[i].gamma_src = gSrc.g;
+            else
+            {
+                std::vector<TComplex> buf = (*sink)(c);
+                for (int dt = 0; dt < nt; ++dt)
+                {
+                    result[i].corr[dt] = TensorRemove(buf[dt]);
+                }
+                result[i].gamma_snk = gSnk.g;
+                result[i].gamma_src = gSrc.g;
+            }
             i++;
         }
     }
     
     startTimer("I/O");
-    saveResult(par().output, "stochastic_meson", result);
-    stopTimer("I/O");
-    
     auto &out = envGet(HadronsSerializable, getName());
-    out = result;
+    if (projected)
+    {
+        saveResult(par().output, "stochastic_meson", momResult);
+        out = momResult;
+    }
+    else
+    {
+        saveResult(par().output, "stochastic_meson", result);
+        out = result;
+    }
+    stopTimer("I/O");
     
     LOG(Message) << "Stochastic meson contraction complete." << std::endl;
 }

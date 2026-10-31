@@ -19,6 +19,9 @@ public:
 protected:
     template <typename ImplPar>
     void parseBoundary(ImplPar &implParams);
+    // add the gauge field's boundary metadata to the inputs if it exists, so
+    // that it is still alive when checkGaugeBoundary runs in setup
+    void addGaugeBoundaryInput(std::vector<std::string> &in);
 private:
     template <typename ImplPar>
     void checkGaugeBoundary(const ImplPar &implParams);
@@ -66,6 +69,18 @@ void FermionActionModule<Par>::parseBoundary(ImplPar &implParams)
         HADRONS_ERROR(Size, "Wrong number of twist");
     }
     checkGaugeBoundary(implParams);
+}
+
+template <typename Par>
+void FermionActionModule<Par>::addGaugeBoundaryInput(std::vector<std::string> &in)
+{
+    const std::string metadata = GaugeBoundary::metadataName(this->par().gauge);
+
+    if (this->env().hasObject(metadata) &&
+        (this->env().getObjectModule(metadata) >= 0))
+    {
+        in.push_back(metadata);
+    }
 }
 
 // The temporal fermion boundary must match the gauge field's declared boundary:

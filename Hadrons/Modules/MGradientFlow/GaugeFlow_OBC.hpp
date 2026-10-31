@@ -371,7 +371,9 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::execute(void)
                 flowt = evolve.taus;
                 LOG(Message) << "Step " << step << " (tau = " << flowt
                              << ")" << std::endl;
-                if (step % par().meas_interval == 0) {
+                // always measure the final flow time
+                if ((step % par().meas_interval == 0) ||
+                    !(evolve.taus < maxTau)) {
                     LOG(Message) << "Compute observables" << std::endl;
                     startTimer("observables");
                     evolve.gauge_status(Uwf, result, flowt);
@@ -388,7 +390,8 @@ void TGaugeFlow_OBC<GImpl, FlowAction>::execute(void)
                 std::vector<GaugeField> &Wi = evolve.evolve_gauge(Uwf);
                 stopTimer("evolution");
 
-                if (step % par().meas_interval == 0) {
+                if ((step % par().meas_interval == 0) ||
+                    (step == static_cast<unsigned int>(par().steps))) {
                     LOG(Message) << "Compute observables" << std::endl;
                     startTimer("observables");
                     evolve.gauge_status(Uwf, result, flowt);

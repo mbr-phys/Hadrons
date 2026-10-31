@@ -90,6 +90,8 @@ std::vector<std::string> TScaledDWF<FImpl>::getInput(void)
 {
     std::vector<std::string> in = {par().gauge};
 
+    this->addGaugeBoundaryInput(in);
+
     if ((!isVector<Real>(par().twist)) && (!par().twist.empty()))
     {
         in.push_back(par().twist);
