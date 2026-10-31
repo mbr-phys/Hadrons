@@ -42,6 +42,12 @@ static std::vector<int> momVec(const std::string &s)
     return strToVec<int>(s);
 }
 
+// |z| without std::abs, which does not accept Grid's Complex on GPU builds
+static double complexAbs(const Complex &z)
+{
+    return std::sqrt(static_cast<double>(z.real()*z.real() + z.imag()*z.imag()));
+}
+
 // running max of |a - b| and of |a|
 struct Diff
 {
@@ -50,8 +56,8 @@ struct Diff
 
     void add(const Complex &a, const Complex &b)
     {
-        err   = std::max(err, static_cast<double>(std::abs(a - b)));
-        scale = std::max(scale, static_cast<double>(std::abs(a)));
+        err   = std::max(err, complexAbs(a - b));
+        scale = std::max(scale, complexAbs(a));
     }
     bool pass(const std::string what, const double tol)
     {

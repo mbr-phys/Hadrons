@@ -96,7 +96,7 @@ void FermionActionModule<Par>::checkGaugeBoundary(const ImplPar &implParams)
     const std::string gauge    = this->par().gauge;
     const std::string metadata = GaugeBoundary::metadataName(gauge);
     const bool        fixed    =
-        (std::abs(implParams.boundary_phases[this->env().getNd() - 1]) == 0.);
+        (implParams.boundary_phases[this->env().getNd() - 1] == Complex(0., 0.));
 
     if (this->env().hasCreatedObject(metadata))
     {
