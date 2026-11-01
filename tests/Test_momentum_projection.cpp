@@ -10,8 +10,9 @@
  *
  * Checks the batched momentum projection (MUtilities::MomentumProjectorList
  * plus the momProjector parameter) against the per-momentum path, for
- * MContraction::Meson (MSink::ScalarPoint sinks), MContraction::StochasticMeson
- * (same sinks, non-zero source time) and MContraction::ContractConservedSink
+ * MContraction::Meson (MSink::ScalarPoint sinks, both phase signs),
+ * MContraction::StochasticMeson (same sinks, non-zero source time) and
+ * MContraction::ContractConservedSink
  * (moms), vector and axial, all directions. The momenta include negative and
  * single-component ones, so a sign error in the phase is caught. Run it once
  * with the time direction split across ranks (e.g. --mpi 1.1.1.2) to check the
@@ -143,9 +144,28 @@ int main(int argc, char *argv[])
     }
 
     // batched path
+    // sign +1 is the MSink::Point phase; sign -1 with the negated momenta must
+    // give the same correlators, labelled -p
+    std::vector<std::string> negMomenta;
+    for (auto &s: momenta)
+    {
+        std::vector<int> p = momVec(s);
+        std::string      n;
+
+        for (unsigned int mu = 0; mu < p.size(); ++mu)
+        {
+            n += ((mu > 0) ? " " : "") + std::to_string(-p[mu]);
+        }
+        negMomenta.push_back(n);
+    }
+
     MUtilities::MomentumProjectorList::Par mpPar;
     mpPar.momenta = momenta;
+    mpPar.sign    = 1;
     application.createModule<MUtilities::MomentumProjectorList>("mp", mpPar);
+    mpPar.momenta = negMomenta;
+    mpPar.sign    = -1;
+    application.createModule<MUtilities::MomentumProjectorList>("mpNeg", mpPar);
 
     MContraction::Meson::Par mesPar;
     mesPar.q1           = "q";
@@ -154,6 +174,9 @@ int main(int argc, char *argv[])
     mesPar.momProjector = "mp";
     mesPar.output       = dir + "/meson_proj";
     application.createModule<MContraction::Meson>("meson_proj", mesPar);
+    mesPar.momProjector = "mpNeg";
+    mesPar.output       = dir + "/meson_projNeg";
+    application.createModule<MContraction::Meson>("meson_projNeg", mesPar);
 
     MContraction::StochasticMeson::Par stPar;
     stPar.phiA         = "phiA";
@@ -226,14 +249,16 @@ int main(int argc, char *argv[])
     {
         typedef MContraction::Meson::Result    Result;
         typedef MContraction::Meson::MomResult MomResult;
-        auto proj = readResult<MomResult>("meson_proj", "meson");
-        Diff d;
+        auto proj    = readResult<MomResult>("meson_proj", "meson");
+        auto projNeg = readResult<MomResult>("meson_projNeg", "meson");
+        Diff d, dNeg;
 
         for (unsigned int m = 0; m < momenta.size(); ++m)
         {
             auto ref = readResult<Result>("meson_" + std::to_string(m), "meson");
 
-            d.missing |= (ref.size() != proj.size());
+            d.missing    |= (ref.size() != proj.size());
+            dNeg.missing |= (ref.size() != projNeg.size());
             for (unsigned int g = 0; g < std::min(ref.size(), proj.size()); ++g)
             {
                 d.missing |= (proj[g].momentum[m] != momVec(momenta[m]))
@@ -244,8 +269,19 @@ int main(int argc, char *argv[])
                     d.add(ref[g].corr[t], proj[g].corr[m][t]);
                 }
             }
+            for (unsigned int g = 0; g < std::min(ref.size(), projNeg.size()); ++g)
+            {
+                dNeg.missing |= (projNeg[g].momentum[m] != momVec(negMomenta[m]))
+                                or (projNeg[g].gamma_snk != ref[g].gamma_snk)
+                                or (projNeg[g].gamma_src != ref[g].gamma_src);
+                for (unsigned int t = 0; t < ref[g].corr.size(); ++t)
+                {
+                    dNeg.add(ref[g].corr[t], projNeg[g].corr[m][t]);
+                }
+            }
         }
-        pass &= d.pass("Meson", tol);
+        pass &= d.pass("Meson, sign +1", tol);
+        pass &= dNeg.pass("Meson, sign -1 at -p", tol);
     }
     {
         typedef MContraction::StochasticMeson::Result    Result;

@@ -46,11 +46,11 @@ BEGIN_HADRONS_NAMESPACE
  *
  * Parameters:
  * - momenta: spatial momenta in units of 2 pi / L, one "px py pz" string each.
- *
- * The phase is exp(+2 pi i p.x / L), as in MSink::Point and
- * ContractConservedSink, so a projected correlator at p equals the Point-sink
- * correlator at p. (MomentumProjectorSphere uses exp(-2 pi i p.x / L): its
- * entry labelled p is the Point-sink result at -p.)
+ * - sign:    +1 or -1 (required); the phase is exp(sign * 2 pi i p.x / L).
+ *            The two choices are complex conjugates of each other: sign picks
+ *            whether x is treated as a source-type or a sink-type position.
+ *            -1 matches MomentumProjectorSphere (and so Gamma3pt's labels),
+ *            +1 matches MSink::Point.
  *
  * The phase fields are temporaries; only the BLAS copy inside the
  * MomentumProject object stays resident.
@@ -65,7 +65,8 @@ class MomentumProjectorListPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(MomentumProjectorListPar,
-                                    std::vector<std::string>, momenta);
+                                    std::vector<std::string>, momenta,
+                                    int,                      sign);
 };
 
 template <typename ComplexField>
@@ -126,6 +127,10 @@ void TMomentumProjectorList<ComplexField>::setup(void)
     {
         HADRONS_ERROR(Argument, "momenta cannot be empty");
     }
+    if ((par().sign != 1) && (par().sign != -1))
+    {
+        HADRONS_ERROR(Argument, "sign must be +1 or -1");
+    }
     env().template createObject<MPType>(getName(), Environment::Storage::standard, 0);
     envCreate(std::vector<std::vector<int>>, getName() + "_momList", 1, 0);
 
@@ -158,7 +163,8 @@ void TMomentumProjectorList<ComplexField>::execute(void)
     envGetTmp(ComplexField, coor);
     envGetTmp(std::vector<ComplexField>, phases);
     LOG(Message) << "Building momentum projector for " << momList.size()
-                 << " momenta" << std::endl;
+                 << " momenta, phase exp(" << ((par().sign > 0) ? "+" : "-")
+                 << "2 pi i p.x/L)" << std::endl;
     startTimer("Phases");
     for (unsigned int m = 0; m < momList.size(); ++m)
     {
@@ -171,7 +177,7 @@ void TMomentumProjectorList<ComplexField>::execute(void)
             LatticeCoordinate(coor, mu);
             ph = ph + (static_cast<Real>(p[mu]) / static_cast<Real>(env().getDim(mu))) * coor;
         }
-        ph = exp(static_cast<Real>(2*M_PI)*i*ph);
+        ph = exp(static_cast<Real>(2*M_PI*par().sign)*i*ph);
     }
     stopTimer("Phases");
 
