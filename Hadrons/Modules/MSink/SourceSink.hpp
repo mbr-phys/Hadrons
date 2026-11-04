@@ -38,13 +38,23 @@ BEGIN_HADRONS_NAMESPACE
 /******************************************************************************
  *                                 SourceSink                                 *
  ******************************************************************************/
+/*
+ * Sink function using a source field:
+ *   sink(q)[t] = sum_{x, x_t = t} S(x) q(x)
+ * with S = source       (sourceOp = "none"), or
+ *      S = adj(source)  (sourceOp = "adj").
+ * Use "adj" to close a propagator against a complex noise source (e.g.
+ * MSource::Z2), so that the noise average gives eta(z) adj(eta)(z') -> delta.
+ * sourceOp has no default value: any other value is an error.
+ */
 BEGIN_MODULE_NAMESPACE(MSink)
 
 class SourceSinkPar: Serializable
 {
 public:
     GRID_SERIALIZABLE_CLASS_MEMBERS(SourceSinkPar,
-                                    std::string, source);
+                                    std::string, source,
+                                    std::string, sourceOp);
 };
 
 template <typename FImpl>
@@ -100,6 +110,11 @@ std::vector<std::string> TSourceSink<FImpl>::getOutput(void)
 template <typename FImpl>
 void TSourceSink<FImpl>::setup(void)
 {
+    if ((par().sourceOp != "adj") and (par().sourceOp != "none"))
+    {
+        HADRONS_ERROR(Argument, "sourceOp must be 'adj' or 'none' (got '"
+                      + par().sourceOp + "')");
+    }
     envCreate(SinkFn, getName(), 1, nullptr);
 }
 
@@ -108,14 +123,25 @@ void TSourceSink<FImpl>::setup(void)
 template <typename FImpl>
 void TSourceSink<FImpl>::execute(void)
 {
-    LOG(Message) << "Setting up sink function with source '" << par().source << "' as the sink" << std::endl;
+    LOG(Message) << "Setting up sink function with source '" << par().source
+                 << "' as the sink (sourceOp '" << par().sourceOp << "')" << std::endl;
 
     PropagatorField &source  = envGet(PropagatorField, par().source);
+    const bool      adjoint  = (par().sourceOp == "adj");
     
-    auto sink = [this, source](const PropagatorField &field)
+    auto sink = [this, source, adjoint](const PropagatorField &field)
     {
         SlicedPropagator res;
-        PropagatorField tmp = source*field;
+        PropagatorField  tmp(field.Grid());
+
+        if (adjoint)
+        {
+            tmp = adj(source)*field;
+        }
+        else
+        {
+            tmp = source*field;
+        }
         
         sliceSum(tmp, res, Tp);
         
