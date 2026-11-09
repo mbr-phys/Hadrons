@@ -36,8 +36,9 @@ BEGIN_HADRONS_NAMESPACE
  * Shared by MGauge::FieldStrength, MUtilities::GaugeInsertion and MContraction::HeavyMeson3pt, so that all of them use the same conventions:
  *
  *  - covariant derivatives on fundamental fields: see MUtilities/DerivHelpers.hpp
- *  - field strength: Grid clover WilsonLoops::FieldStrength, projected to be traceless. It is anti-hermitian, F_{mu nu} ~ i a^2 g G_{mu nu} up to the 
- *    sign convention for the gauge potential. The clover is exactly antisymmetric, F_{nu mu} = -F_{mu nu}.
+ *  - field strength: Grid clover WilsonLoops::FieldStrength, projected to be traceless. Its leaves are oriented mu then nu,
+ *    so F_{mu nu} = [D_mu, D_nu] + O(a^2) with the covariant derivative of DerivHelpers.hpp (anti-hermitian; with
+ *    D = d - igA this is -i a^2 g G_{mu nu}). The clover is exactly antisymmetric, F_{nu mu} = -F_{mu nu}.
  *  - chromoelectric and chromomagnetic components, each stored as 3 colour-matrix fields:
  *          E[j] = F_{j t}                                  (j = 0, 1, 2)
  *          B[k] = F_{ij}, (i, j, k) cyclic permutation of (0, 1, 2), i.e. B = (F_12, F_20, F_01)
