@@ -38,17 +38,18 @@ BEGIN_HADRONS_NAMESPACE
  * ----------------------------------------------
  * mode = clover: out = F_{mu nu}  (traceless, anti-hermitian clover)
  * mode = divE:   out = sum_i [D_i, F_{i t}]  (adjoint covariant divergence of the chromoelectric field)
+ * mode = DE:     out = [D_mu, F_{nu t}]       (adjoint covariant derivative of one chromoelectric component)
  *
  * Conventions are those of MUtilities/HQEOperators.hpp. 
  * The output is a GaugeLinkField that can be inserted on a propagator with MUtilities::GaugeInsertion (mode = matrix).
  *
  * Parameters:
  * - gauge: gauge field 
- * - mode:  clover or divE
- * - mu:    first index (clover only)
- * - nu:    second index (clover only)
+ * - mode:  clover, divE or DE
+ * - mu:    first index (clover, DE)
+ * - nu:    second index (clover; DE: spatial component of E)
  *
- * There are no default values: gauge, mode and (for clover) mu, nu must be set.
+ * There are no default values: gauge, mode and (for clover, DE) mu, nu must be set.
  */
 
 /******************************************************************************
@@ -121,9 +122,13 @@ void TFieldStrength<GImpl>::setup(void)
     {
         HADRONS_ERROR(Argument, "gauge must be set");
     }
-    if ((par().mode != "clover") and (par().mode != "divE"))
+    if ((par().mode != "clover") and (par().mode != "divE") and (par().mode != "DE"))
     {
-        HADRONS_ERROR(Argument, "mode must be 'clover' or 'divE'");
+        HADRONS_ERROR(Argument, "mode must be 'clover', 'divE' or 'DE'");
+    }
+    if ((par().mode == "DE") and ((par().mu >= Nd) or (par().nu >= Tp)))
+    {
+        HADRONS_ERROR(Argument, "DE: mu must be in {0, 1, 2, 3} and nu in {0, 1, 2}");
     }
 
     if (par().mode == "clover")
@@ -152,6 +157,14 @@ void TFieldStrength<GImpl>::execute(void)
     {
         LOG(Message) << "Computing clover field strength F_{" << par().mu << par().nu << "} of '" << par().gauge << "'" << std::endl;
         HQE::fieldStrength<GImpl>(out, U, par().mu, par().nu);
+    }
+    else if (par().mode == "DE")
+    {
+        std::vector<GaugeLinkField> E;
+
+        LOG(Message) << "Computing [D_" << par().mu << ", F_{" << par().nu << " t}] of '" << par().gauge << "'" << std::endl;
+        HQE::chromoE<GImpl>(E, U);
+        HQE::adjCovDeriv<GImpl>(out, E[par().nu], U, par().mu);
     }
     else
     {

@@ -62,7 +62,7 @@ using namespace Hadrons;
  *  6. '*_g' (random gauge transformation) == the same instance on 'gauge',
  *     all entries (hm3pt_g, wne_g_DeltaF2, wne_g_DeltaF0_T1)
  *  7. 'hm3pt_unit' (unit gauge): sigmaB, sigmaE, sigmaBD4, sigmaED4, DiE, divE,
- *     DiSigmaE, gSigmaB, gSigmaE vanish
+ *     DiSigmaE, sigmaEDi, sigmaCurlE, gSigmaB, gSigmaE vanish
  *  8. 'hm3pt': D4 + D4L should be close to the time derivative of the
  *     Identity-vertex correlator; hermiticity/reality checks as in
  *     lifetimes_round2.md §7
@@ -78,6 +78,12 @@ using namespace Hadrons;
  *                                        == 'we_diag_gT' Identity, trace 1 and 2
  *     'we_pair' (GammaT Identity), trace 1 and 2
  *                                        == 'we_diag_gT' GammaT, trace 1 and 2
+ * 11. spin-orbit vertices (Grid's Sigma<IJ> is gamma_I gamma_J, without the i
+ *     of sigma_ij in HQEOperators.hpp):
+ *     'hm3pt' sigmaEDi                   == i sum_{i != j} 'ref_sigmaEDi_<i><j>'
+ *     'hm3pt' sigmaCurlE                 == i sum_{i != j} 'ref_sigmaCurlE_<i><j>'
+ *     'hm3pt' DiSigmaE - sigmaEDi        ~= 'hm3pt' sigmaCurlE (up to O(a^2))
+ *     Re/Im: 1/2 (DiSigmaE + sigmaEDi) is the Hermitian part of DiSigmaE
  */
 
 struct Chain
@@ -410,6 +416,51 @@ int main(int argc, char *argv[])
     {
         gamma3pt("ref_gDi_" + std::to_string(i), derivLeg(c.hSnk, i), gSpatial[i]);
         gamma3pt("ref_gDiD4_" + std::to_string(i), derivLeg("h_snk_D4", i), gSpatial[i]);
+    }
+
+    // 11. spin-orbit vertices: gamma_i gamma_j E_j on D_i q3, and gamma_i gamma_j [D_i, E_j] on q3,
+    //     one module per (i, j), i != j
+    auto sigmaName = [](const int i, const int j)
+    {
+        const std::string xyz = "XYZ";
+        const int         lo = std::min(i, j), hi = std::max(i, j);
+
+        return std::string(i < j ? "" : "Minus") + "Sigma" + xyz[lo] + xyz[hi];
+    };
+    for (int i = 0; i < Tp; ++i)
+    for (int j = 0; j < Tp; ++j)
+    {
+        if (i == j)
+        {
+            continue;
+        }
+
+        const std::string ij = std::to_string(i) + std::to_string(j);
+
+        giPar.q      = derivLeg(c.hSnk, i);
+        giPar.mode   = "matrix";
+        giPar.gamma  = strToVec<Gamma::Algebra>(sigmaName(i, j))[0];
+        // E_j, created once per j
+        const std::string ej = "E_" + std::to_string(j);
+        if (derived.insert(ej).second)
+        {
+            fsPar.mode = "clover";
+            fsPar.mu   = j;
+            fsPar.nu   = Tp;
+            application.createModule<MGauge::FieldStrength>(ej, fsPar);
+        }
+        giPar.matrix = ej;
+        application.createModule<MUtilities::GaugeInsertionPropagator>("h_snk_sigmaEDi_" + ij, giPar);
+        gamma3pt("ref_sigmaEDi_" + ij, "h_snk_sigmaEDi_" + ij, "Identity");
+
+        fsPar.mode = "DE";
+        fsPar.mu   = i;
+        fsPar.nu   = j;
+        application.createModule<MGauge::FieldStrength>("DE_" + ij, fsPar);
+        giPar.q      = c.hSnk;
+        giPar.matrix = "DE_" + ij;
+        application.createModule<MUtilities::GaugeInsertionPropagator>("h_snk_sigmaCurlE_" + ij, giPar);
+        gamma3pt("ref_sigmaCurlE_" + ij, "h_snk_sigmaCurlE_" + ij, "Identity");
     }
 
     weakNonEye("ref_weakNonEye", c.hSrc, c.lSrcF, c.lSnkF, c.hSnk);
