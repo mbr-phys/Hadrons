@@ -50,20 +50,70 @@ public:
                                     std::vector<ComplexD>,  polyakovT);
 };
 
-// Wilson flow implemented through the padded plaquette/rectangle force path.
-// With c1 = 0 this is PlaqPlusRectangleAction(beta, 0).
+// Wilson flow implemented through the padded plaquette force path.
+// With c1 = 0 this is PlaqPlusRectangleAction(beta, 0); S and deriv are overridden
+// to skip the rectangles (their stencil build and staples), which have zero weight.
 template <class GImpl>
 class WilsonAction : public RBCGaugeAction<GImpl> {
+private:
+    // padded cell and stencil of the plaquette staple only, reused between calls
+    class StapleAllWorkspace : public WilsonLoops<GImpl>::WilsonLoopPaddedWorkspace {
+    public:
+        StapleAllWorkspace(void)
+        {
+            this->addStencil(new typename WilsonLoops<GImpl>::StaplePaddedAllWorkspace);
+        }
+    };
+
+    RealD              beta_;
+    StapleAllWorkspace workspace_;
 public:
     INHERIT_GIMPL_TYPES(GImpl);
 
     WilsonAction(RealD beta)
-    : RBCGaugeAction<GImpl>(beta, 0.0)
+    : RBCGaugeAction<GImpl>(beta, 0.0), beta_(beta)
     {}
 
     virtual std::string action_name()
     {
         return "WilsonAction";
+    }
+
+    virtual RealD S(const GaugeField &U)
+    {
+        RealD vol  = U.Grid()->gSites();
+        RealD plaq = WilsonLoops<GImpl>::avgPlaquette(U);
+
+        return beta_*(1.0 - plaq)*(Nd*(Nd - 1.0))*vol*0.5;
+    }
+
+    virtual void deriv(const GaugeField &U, GaugeField &dSdU)
+    {
+        RealD         factor   = beta_/RealD(Nc)*0.5;
+        GridBase      *grid    = U.Grid();
+        GridCartesian *unpadded = dynamic_cast<GridCartesian *>(grid);
+
+        std::vector<GaugeLinkField> Umu(Nd, grid), staple(Nd, grid);
+        for (int mu = 0; mu < Nd; mu++)
+        {
+            Umu[mu] = PeekIndex<LorentzIndex>(U, mu);
+        }
+
+        const PaddedCell       &cell = workspace_.getPaddedCell(unpadded);
+        CshiftImplGauge<GImpl> cshift;
+        std::vector<GaugeLinkField> Upad(Nd, cell.grids.back());
+        for (int mu = 0; mu < Nd; mu++)
+        {
+            Upad[mu] = cell.Exchange(Umu[mu], cshift);
+        }
+        WilsonLoops<GImpl>::StaplePaddedAll(staple, Upad, cell, workspace_.getStencil(0, unpadded));
+
+        GaugeLinkField dSdU_mu(grid);
+        for (int mu = 0; mu < Nd; mu++)
+        {
+            dSdU_mu = Ta(Umu[mu]*staple[mu])*factor;
+            PokeIndex<LorentzIndex>(dSdU, dSdU_mu, mu);
+        }
     }
 };
 
