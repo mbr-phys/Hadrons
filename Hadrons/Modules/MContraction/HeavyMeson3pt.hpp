@@ -83,6 +83,12 @@ BEGIN_HADRONS_NAMESPACE
  *       DiE      sum_i D_i F_i3                     (derivative acts on F q)
  *       divE     sum_i [D_i, F_i3]                  (colour-matrix insertion)
  *       DiSigmaE sum_{i,j} D_i sigma_ij F_j3        (derivative acts on F q)
+ *       sigmaEDi sum_{i,j} sigma_ij F_j3 D_i         (derivative acts on q only)
+ *       sigmaCurlE sum_{i,j} sigma_ij [D_i, F_j3]    (colour-matrix insertion)
+ *     The Hermitian (spin-orbit) part of DiSigmaE is 1/2 (DiSigmaE + sigmaEDi),
+ *     and DiSigmaE - sigmaEDi is a point-split form of sigmaCurlE (equal up to
+ *     O(a^2)), so DiSigmaE - sigmaCurlE/2 and sigmaEDi + sigmaCurlE/2 are two
+ *     discretisations of it (as DiE and divE are for the Darwin term).
  *     chirality-even partners of the operators above, needed for the
  *     positive-flow-time mixing (gf_lifetime_notes, operator basis):
  *       gD4      gamma_4 D_4                        (twist-2 T_44)
@@ -199,10 +205,10 @@ MODULE_REGISTER_TMP(HeavyMeson3pt, ARG(THeavyMeson3pt<FIMPL, GIMPL>), MContracti
  *                     THeavyMeson3pt implementation                          *
  ******************************************************************************/
 static const std::vector<std::string> heavyMeson3ptOps = {"D2", "D4", "D4L", "D4D4", "D4D4D4", "D2D4", "sigmaB", "sigmaE", "sigmaBD4", "sigmaED4", "DiE", "divE", "DiSigmaE",
-                                                          "gD4", "gDi", "gD4D4", "gD2", "gDiD4", "gSigmaB", "gSigmaE"};
+                                                          "sigmaEDi", "sigmaCurlE", "gD4", "gDi", "gD4D4", "gD2", "gDiD4", "gSigmaB", "gSigmaE"};
 
 // operators involving the field strength
-static const std::vector<std::string> heavyMeson3ptFOps = {"sigmaB", "sigmaE", "sigmaBD4", "sigmaED4", "DiE", "divE", "DiSigmaE", "gSigmaB", "gSigmaE"};
+static const std::vector<std::string> heavyMeson3ptFOps = {"sigmaB", "sigmaE", "sigmaBD4", "sigmaED4", "DiE", "divE", "DiSigmaE", "sigmaEDi", "sigmaCurlE", "gSigmaB", "gSigmaE"};
 
 template <typename T>
 inline bool heavyMeson3ptContains(const std::vector<T> &v, const T &x)
@@ -462,6 +468,7 @@ void THeavyMeson3pt<FImpl, GImpl>::setup(void)
         envTmp(std::vector<GaugeLinkField>, "Es", 1, 3, grid);
         envTmp(std::vector<GaugeLinkField>, "Bs", 1, 3, grid);
         envTmpLat(GaugeLinkField, "divE");
+        envTmp(std::vector<GaugeLinkField>, "curlE", 1, 3, grid);
     }
     envTmpLat(ComplexField, "contraction");
     envCreate(HadronsSerializable, getName(), 1, 0);
@@ -680,6 +687,29 @@ void THeavyMeson3pt<FImpl, GImpl>::computeHQE(Result &res, const GaugeField &U)
                 covDeriv<GImpl>(tmp2, tmp, link, i, DerivType::symmetric);
                 Y += tmp2;
             }
+        }
+        else if (v == "sigmaEDi")
+        {
+            Y = Zero();
+            for (int i: spatial)
+            {
+                link = PeekIndex<LorentzIndex>(U, i);
+                covDeriv<GImpl>(dq, q3, link, i, DerivType::symmetric);
+                for (int j: spatial)
+                {
+                    if (j != i)
+                    {
+                        HQE::applySigma(tmp2, dq, i, j);
+                        Y += (*E)[j]*tmp2;
+                    }
+                }
+            }
+        }
+        else if (v == "sigmaCurlE")
+        {
+            envGetTmp(std::vector<GaugeLinkField>, curlE);
+            HQE::curlE<GImpl>(curlE, *E, U);
+            HQE::applySigmaB<GImpl>(Y, q3, curlE);
         }
         else if (v == "gD4")
         {

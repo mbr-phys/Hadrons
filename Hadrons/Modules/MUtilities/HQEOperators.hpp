@@ -47,6 +47,8 @@ BEGIN_HADRONS_NAMESPACE
  *  - chromomagnetic: sigma.B f = sum_{i<j<Tp} sigma_ij F_ij f = sum_k sigma_ij B[k] f  (cyclic i, j, k)
  *    chromoelectric: sigma.E f = sum_{j<Tp}   sigma_jt F_jt f = sum_j sigma_jt E[j] f
  *  - divergence of E: div E = sum_{i<Tp} [D_i, E[i]]
+ *  - curl of E, stored like B: curlE[k] = [D_i, E[j]] - [D_j, E[i]], (i, j, k) cyclic, so that
+ *    sum_{i != j < Tp} sigma_ij [D_i, E[j]] f = applySigmaB(f, curlE)
  */
 
 namespace HQE
@@ -110,6 +112,21 @@ namespace HQE
         {
             adjCovDeriv<GImpl>(tmp, E[i], U, i);
             out += tmp;
+        }
+    }
+
+    // curlE[k] = [D_i, E[j]] - [D_j, E[i]], (i, j, k) cyclic
+    template <typename GImpl>
+    void curlE(std::vector<typename GImpl::GaugeLinkField> &out, const std::vector<typename GImpl::GaugeLinkField> &E, const typename GImpl::GaugeField &U)
+    {
+        typename GImpl::GaugeLinkField tmp(U.Grid());
+
+        out.resize(3, typename GImpl::GaugeLinkField(U.Grid()));
+        for (int k = 0; k < Tp; ++k)
+        {
+            adjCovDeriv<GImpl>(out[k], E[cyclicJ(k)], U, cyclicI(k));
+            adjCovDeriv<GImpl>(tmp, E[cyclicI(k)], U, cyclicJ(k));
+            out[k] -= tmp;
         }
     }
 
