@@ -182,6 +182,7 @@ class Evolution {
 
     private:
         OpenGaugeBoundaryParameters boundaryParameters_;
+        OpenGaugeBoundary<GImpl> gaugeBoundary_;
         std::string gaugeBoundaryType_;
         double flowCG_, ensembleCG_;
         GridBase *grid_;
@@ -276,6 +277,15 @@ class Evolution {
             }
         }
 
+        // U = exp(ep*Z)*U, projected on the group. With open boundaries the
+        // unused link T -> 0 keeps its input value, as in openQCD (wflow.c,
+        // update_ud): openQCD configurations store it as zero, which the
+        // projection would turn into NaN (see OpenGaugeBoundary::updateField).
+        void updateField(GaugeField &Z, GaugeField &U, const double ep)
+        {
+            gaugeBoundary_.updateField(Z, U, ep);
+        }
+
         template <typename Field>
         void applyOpenTemporalBoundary(Field &field) const
         {
@@ -287,6 +297,7 @@ class Evolution {
                   double ts, const std::string &gaugeBoundaryType, double flowCG,
                   TimerArray *timer = nullptr)
         : boundaryParameters_(makeBoundaryParameters(gaugeBoundaryType, flowCG))
+        , gaugeBoundary_(boundaryParameters_)
         , gaugeBoundaryType_(gaugeBoundaryType)
         , flowCG_(GaugeBoundary::isOpen(gaugeBoundaryType) ? flowCG : 1.0)
         , ensembleCG_(GaugeBoundary::unknownCG())
@@ -306,6 +317,7 @@ class Evolution {
                   const std::string &gaugeBoundaryType, double flowCG,
                   TimerArray *timer = nullptr)
         : boundaryParameters_(makeBoundaryParameters(gaugeBoundaryType, flowCG))
+        , gaugeBoundary_(boundaryParameters_)
         , gaugeBoundaryType_(gaugeBoundaryType)
         , flowCG_(GaugeBoundary::isOpen(gaugeBoundaryType) ? flowCG : 1.0)
         , ensembleCG_(GaugeBoundary::unknownCG())
@@ -378,21 +390,21 @@ class Evolution {
             Wi_[0] = U;                                     // W0
             flowForce(U, zBuf1_);
             zBuf1_ *= 0.25;                                 // Z0 = 1/4 * F(U)
-            GImpl::update_field(zBuf1_, U, -2.0*epsilon);   // U = W1 = exp(ep*Z0)*W0
+            updateField(zBuf1_, U, -2.0*epsilon);           // U = W1 = exp(ep*Z0)*W0
             Wi_[1] = U;                                     // W1
 
             zBuf1_ *= -17.0/8.0;
             flowForce(U, uBuf1_);
             zBuf1_ += uBuf1_;                                // -17/32*Z0 + Z1
             zBuf1_ *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
-            GImpl::update_field(zBuf1_, U, -2.0*epsilon);    // U = W2 = exp(ep*Z)*W1
+            updateField(zBuf1_, U, -2.0*epsilon);            // U = W2 = exp(ep*Z)*W1
             Wi_[2] = U;                                      // W2
 
             zBuf1_ *= -4.0/3.0;
             flowForce(U, uBuf1_);
             zBuf1_ += uBuf1_;                                // 4/3*(17/36*Z0 -8/9*Z1) + Z2
             zBuf1_ *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
-            GImpl::update_field(zBuf1_, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2
+            updateField(zBuf1_, U, -2.0*epsilon);            // V(t+e) = exp(ep*Z)*W2
             Wi_[3] = U;                                      // W3
         };
 
@@ -407,23 +419,23 @@ class Evolution {
             flowForce(U, zBuf1_);
             zBuf2_ = -zBuf1_;
             zBuf1_ *= 0.25;                                    // Z0 = 1/4 * F(U)
-            GImpl::update_field(zBuf1_, U, -2.0*epsilon);      // U = W1 = exp(ep*Z0)*W0
+            updateField(zBuf1_, U, -2.0*epsilon);              // U = W1 = exp(ep*Z0)*W0
             Wi_[1] = U;                                        // W1
 
             zBuf1_ *= -17.0/8.0;
             flowForce(U, uBuf1_); zBuf1_ += uBuf1_;            // -17/32*Z0 +Z1
             zBuf2_ += 2.0*uBuf1_;
             zBuf1_ *= 8.0/9.0;                                 // Z = -17/36*Z0 +8/9*Z1
-            GImpl::update_field(zBuf1_, U, -2.0*epsilon);      // U = W2 = exp(ep*Z)*W1
+            updateField(zBuf1_, U, -2.0*epsilon);              // U = W2 = exp(ep*Z)*W1
             Wi_[2] = U;                                        // W2
 
             zBuf1_ *= -4.0/3.0;
             flowForce(U, uBuf1_); zBuf1_ += uBuf1_;            // 4/3*(17/36*Z0 -8/9*Z1) +Z2
             zBuf1_ *= 3.0/4.0;                                 // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
-            GImpl::update_field(zBuf1_, U, -2.0*epsilon);      // V(t+e) = exp(ep*Z)*W2      
+            updateField(zBuf1_, U, -2.0*epsilon);              // V(t+e) = exp(ep*Z)*W2      
             Wi_[3] = U;                                        // W3
             
-            GImpl::update_field(zBuf2_, uBuf2_, -2.0*epsilon); // V'(t+e) = exp(ep*Z')*W0
+            updateField(zBuf2_, uBuf2_, -2.0*epsilon);         // V'(t+e) = exp(ep*Z')*W0
             Wi_[4] = uBuf2_;                                   // Uprime
         };
 

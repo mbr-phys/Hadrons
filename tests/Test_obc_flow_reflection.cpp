@@ -16,6 +16,10 @@
  * reflected temporal links are U_t(y0) = U_t(L - y0 - 1)^dagger. The flows
  * must agree to rounding on every active link. Also checks that the unused
  * link T -> 0 is not changed, and that flow cG != 1 is detected.
+ * Finally repeats the comparison with the unused links set to zero, as stored
+ * in openQCD configurations (bcnds.c, set_bc): the flow, including the stages
+ * returned by evolve_gaugeFF for the fermion flow, must stay finite and the
+ * unused links must stay zero.
  */
 #include <Hadrons/Global.hpp>
 #include <Hadrons/TimerArray.hpp>
@@ -130,6 +134,22 @@ static RealD unusedLinkDistance(const GaugeField &U, const GaugeField &U0)
     return dist;
 }
 
+// set the unused links T -> 0 to zero, as openQCD does for open boundaries
+static void zeroUnusedLinks(GaugeField &U)
+{
+    typedef typename GImpl::GaugeLinkField GaugeLinkField;
+
+    const int                  tMax = U.Grid()->GlobalDimensions()[tDir] - 1;
+    Lattice<iScalar<vInteger>> t(U.Grid());
+    GaugeLinkField             Ut(U.Grid()), zero(U.Grid());
+
+    LatticeCoordinate(t, tDir);
+    zero = Zero();
+    Ut   = PeekIndex<LorentzIndex>(U, tDir);
+    Ut   = where(t == tMax, zero, Ut);
+    PokeIndex<LorentzIndex>(U, Ut, tDir);
+}
+
 int main(int argc, char *argv[])
 {
     Grid_init(&argc, &argv);
@@ -197,6 +217,74 @@ int main(int argc, char *argv[])
     {
         std::cout << GridLogError << "FAIL: the test does not resolve the flow cG"
                   << std::endl;
+        pass = false;
+    }
+
+    // openQCD convention: zero unused links. The reflected lattice never uses
+    // them, so the active links must still match the reflected flow.
+    Uflow = U0;
+    zeroUnusedLinks(Uflow);
+    GaugeField Uzero(Uflow), Ufermion(Uflow);
+    for (int step = 0; step < nStep; ++step)
+    {
+        open.evolve_gauge(Uflow);
+    }
+
+    const RealD dZeroReflect = activeLinkDistance(Uflow, Udbl);
+    const RealD dZeroUnused  = unusedLinkDistance(Uflow, Uzero);
+    const RealD nZero        = norm2(Uflow);
+
+    std::cout << GridLogMessage << "zero unused links: open flow vs reflected "
+              << "periodic flow: " << dZeroReflect << std::endl;
+    std::cout << GridLogMessage << "zero unused links: change of the unused links: "
+              << dZeroUnused << std::endl;
+    if (!std::isfinite(nZero))
+    {
+        std::cout << GridLogError << "FAIL: flow with zero unused links is not "
+                  << "finite" << std::endl;
+        pass = false;
+    }
+    if (!(dZeroReflect < tol))
+    {
+        std::cout << GridLogError << "FAIL: flow with zero unused links differs "
+                  << "from the reflected periodic flow" << std::endl;
+        pass = false;
+    }
+    if (!(dZeroUnused == 0.))
+    {
+        std::cout << GridLogError << "FAIL: zero unused links changed" << std::endl;
+        pass = false;
+    }
+
+    // same through evolve_gaugeFF, which also returns the RK stages used by
+    // the fermion flow
+    std::vector<int> stageBc = {1, 1, 1, 0};
+    bool             stagesFinite = true;
+
+    for (int step = 0; step < nStep; ++step)
+    {
+        std::vector<GaugeField> &Wi = open.evolve_gaugeFF(Ufermion, stageBc);
+
+        for (int i = 0; i < 3; ++i)
+        {
+            stagesFinite = stagesFinite && std::isfinite(norm2(Wi[i]));
+        }
+    }
+
+    const RealD dFermion = activeLinkDistance(Ufermion, Udbl);
+
+    std::cout << GridLogMessage << "zero unused links, evolve_gaugeFF: open flow "
+              << "vs reflected periodic flow: " << dFermion << std::endl;
+    if (!stagesFinite || !std::isfinite(norm2(Ufermion)))
+    {
+        std::cout << GridLogError << "FAIL: evolve_gaugeFF with zero unused links "
+                  << "is not finite" << std::endl;
+        pass = false;
+    }
+    if (!(dFermion < tol))
+    {
+        std::cout << GridLogError << "FAIL: evolve_gaugeFF with zero unused links "
+                  << "differs from the reflected periodic flow" << std::endl;
         pass = false;
     }
 
