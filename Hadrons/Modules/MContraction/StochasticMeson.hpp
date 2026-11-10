@@ -130,8 +130,8 @@ public:
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
     using MPManyType = MomentumProjectMany<ComplexField1, ComplexField1>;
-    typedef Lattice<iScalar<iScalar<iMatrix<typename ComplexField1::vector_type, Nc>>>> ColourMatrixField1;
-    typedef typename ColourMatrixField1::scalar_object                                  ColourMatrix1;
+    // ColourMatrixField1 comes from FERM_TYPE_ALIASES
+    typedef typename ColourMatrixField1::scalar_object ColourMatrix1;
     
     class Result: Serializable
     {
