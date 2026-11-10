@@ -32,6 +32,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
 #include <Grid/algorithms/blas/MomentumProject.h>
+#include <Hadrons/MomentumProjectMany.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -73,7 +74,8 @@ template <typename ComplexField>
 class TMomentumProjectorList: public Module<MomentumProjectorListPar>
 {
 public:
-    using MPType = MomentumProject<ComplexField, ComplexField>;
+    using MPType     = MomentumProject<ComplexField, ComplexField>;
+    using MPManyType = MomentumProjectMany<ComplexField, ComplexField>;
 public:
     // constructor
     TMomentumProjectorList(const std::string name);
@@ -131,7 +133,9 @@ void TMomentumProjectorList<ComplexField>::setup(void)
     {
         HADRONS_ERROR(Argument, "sign must be +1 or -1");
     }
-    env().template createObject<MPType>(getName(), Environment::Storage::standard, 0);
+    // stored as MPType, so that envGet(MPType, ...) works; envGetDerived
+    // gives the MomentumProjectMany interface
+    env().template createDerivedObject<MPType, MPManyType>(getName(), Environment::Storage::standard, 0);
     envCreate(std::vector<std::vector<int>>, getName() + "_momList", 1, 0);
 
     auto &momList = envGet(std::vector<std::vector<int>>, getName() + "_momList");

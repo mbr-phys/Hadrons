@@ -43,6 +43,7 @@ nobase_libHadrons_a_HEADERS = \
 	Module.hpp                \
 	Modules.hpp               \
 	ModuleFactory.hpp         \
+	MomentumProjectMany.hpp   \
 	NamedTensor.hpp           \
 	Random.hpp                \
 	Serialization.hpp         \

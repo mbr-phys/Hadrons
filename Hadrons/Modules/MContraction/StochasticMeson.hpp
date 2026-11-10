@@ -32,6 +32,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
 #include <Grid/algorithms/blas/MomentumProject.h>
+#include <Hadrons/MomentumProjectMany.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -54,6 +55,25 @@ BEGIN_HADRONS_NAMESPACE
  * P is summed over space on the explicitly supplied source time slice; Q is
  * projected by the supplied MSink object and stored at absolute sink time,
  * following Meson.hpp.
+ *
+ * Momentum. The source is projected onto the momentum opposite to the sink
+ * one: with sink phase exp(+i p.x) the source carries exp(-i p.y), so that
+ * the result is sum_{x,y} exp(i p.(x - y)) C(x, y), the translation average
+ * of the point-to-all correlator at momentum p, times the spatial volume.
+ * - With momProjector, every momentum of the projector is computed at once,
+ *   the source phase being the complex conjugate of the projector phase.
+ *   This path needs spin-colour diagonal noise, eta = 1_spin x M with M a
+ *   colour matrix field (MNoise::*SpinColorDiagonal, also after fermion flow,
+ *   which acts trivially in spin); this is checked. Then
+ *     P_p = (Gamma_source^dag gamma5) x N_p,
+ *     N_p = sum_{y, y0 = sourceTime} exp(-i p.y) M_A(y)^dag M_B(y),
+ *   is independent of the gamma structures, and with the colour matrix field
+ *     Y(x) = tr_spin[phi_2B(x)^dag gamma5 Gamma_sink phi_1A(x) Gamma_source^dag gamma5]
+ *   the correlator is C(p, t) = tr_colour[Y(p, t) N_p]. The Y fields of all
+ *   gamma pairs, and N, are each projected with one GEMM
+ *   (MomentumProjectMany).
+ * - With sink, the source is projected onto -p for sourceMom = p (empty:
+ *   zero momentum), matching an MSink::Point sink at momentum p.
  * 
  * Parameters:
  * - phiA: solution field for flavour 1, noise A
@@ -66,6 +86,8 @@ BEGIN_HADRONS_NAMESPACE
  *                 or MPScalar), used instead of sink to project onto all its
  *                 momenta at once. Exclusive with sink. The result then holds
  *                 the momenta (integer vectors) and corr[momentum][time].
+ * - sourceMom: source momentum (integer vector) for the sink path, empty for
+ *              zero; not used with momProjector
  * - sourceTime: centre time of the source bilinear
  * - noiseA/noiseB: labels from one common per-source-time noise pool
  * - flowTime: fermion flow time recorded with the result
@@ -95,7 +117,8 @@ public:
                                     double, flowTime,
                                     std::string, output,
                                     unsigned int, detSrc,
-                                    std::string, momProjector);
+                                    std::string, momProjector,
+                                    std::string, sourceMom);
 };
 
 template <typename FImpl1, typename FImpl2>
@@ -106,7 +129,10 @@ public:
     FERM_TYPE_ALIASES(FImpl2, 2);
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
-    using MPType = MomentumProject<ComplexField1, ComplexField1>;
+    using MPType     = MomentumProject<ComplexField1, ComplexField1>;
+    using MPManyType = MomentumProjectMany<ComplexField1, ComplexField1>;
+    typedef Lattice<iScalar<iScalar<iMatrix<typename ComplexField1::vector_type, Nc>>>> ColourMatrixField1;
+    typedef typename ColourMatrixField1::scalar_object                                  ColourMatrix1;
     
     class Result: Serializable
     {
@@ -149,7 +175,11 @@ public:
     virtual void setup(void);
     // execution
     virtual void execute(void);
-    
+private:
+    // M with eta = 1_spin x M, checking that eta has this form
+    template <typename PropField>
+    void spinTrivialColour(ColourMatrixField1 &M, const PropField &eta,
+                           PropField &tmp, const std::string &name);
 };
 
 MODULE_REGISTER_TMP(StochasticMeson, ARG(TStochasticMeson<FIMPL, FIMPL>), MContraction);
@@ -257,15 +287,65 @@ void TStochasticMeson<FImpl1, FImpl2>::setup(void)
     {
         HADRONS_ERROR(Argument, "sink and momProjector cannot both be set");
     }
+    if (!par().sourceMom.empty() and par().sink.empty())
+    {
+        HADRONS_ERROR(Argument, "sourceMom is only used with sink");
+    }
     envTmpLat(LatticeComplex, "c");
+    envTmpLat(PropagatorField1, "sinkProd");
+    envTmpLat(PropagatorField1, "prod");
+    if (!par().momProjector.empty())
+    {
+        // one Y field per gamma pair, and the source colour matrix field N,
+        // each set projected together
+        std::map<Gamma::Algebra, std::vector<Gamma::Algebra>> gammaMap;
+
+        envTmp(std::vector<ColourMatrixField1>, "traces", 1, parseGammaString(gammaMap),
+               envGetGrid(ComplexField1));
+        envTmp(std::vector<ColourMatrixField1>, "sourceCol", 1, 1, envGetGrid(ComplexField1));
+        envTmpLat(ColourMatrixField1, "colA");
+        envTmpLat(ColourMatrixField1, "colB");
+    }
+    else if (!par().sourceMom.empty())
+    {
+        envTmpLat(LatticeComplex, "coor");
+        envTmpLat(LatticeComplex, "sourcePhase");
+    }
     envCreate(HadronsSerializable, getName(), 1, 0);
+}
+
+// spin structure of the noise /////////////////////////////////////////////////
+template <typename FImpl1, typename FImpl2>
+template <typename PropField>
+void TStochasticMeson<FImpl1, FImpl2>::spinTrivialColour(ColourMatrixField1 &M,
+                                                         const PropField &eta,
+                                                         PropField &tmp,
+                                                         const std::string &name)
+{
+    M   = peekSpin(eta, 0, 0);
+    tmp = Zero();
+    for (int s = 0; s < Ns; ++s)
+    {
+        pokeSpin(tmp, M, s, s);
+    }
+    tmp = tmp - eta;
+
+    const RealD defect = norm2(tmp), scale = norm2(eta);
+
+    if (!(defect <= 1.0e-20*scale))
+    {
+        HADRONS_ERROR(Argument, "noise field '" + name + "' is not of the form "
+                      "1_spin x colour matrix (|defect|^2/|eta|^2 = "
+                      + std::to_string(defect/scale) + "); momProjector needs "
+                      "spin-colour diagonal noise");
+    }
 }
 
 // execution ///////////////////////////////////////////////////////////////////
 template <typename FImpl1, typename FImpl2>
 void TStochasticMeson<FImpl1, FImpl2>::execute(void)
 {
-    if (par().detSrc == 1) 
+    if (par().detSrc == 1)
     {
         LOG(Message) << "Allowing identical sources - these should be deterministic or you're making an error." << std::endl;
     }
@@ -305,32 +385,97 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
         result[i].noise_b = par().noiseB;
         result[i].flow_time = par().flowTime;
     }
-    
+
     // Get input fields
     auto &phiA = envGet(PropagatorField1, par().phiA);
     auto &etaA  = envGet(PropagatorField1, par().etaA);
     auto &phiB = envGet(PropagatorField2, par().phiB);
     auto &etaB  = envGet(PropagatorField2, par().etaB);
-    
-    SinkFnScalar                  *sink    = nullptr;
-    MPType                        *mp      = nullptr;
-    std::vector<std::vector<int>> *momList = nullptr;
+
+    envGetTmp(PropagatorField1, sinkProd);
+    envGetTmp(PropagatorField1, prod);
 
     if (projected)
     {
         LOG(Message) << "(using momentum projector '" << par().momProjector
                      << "')" << std::endl;
-        mp      = &envGet(MPType, par().momProjector);
-        momList = &envGet(std::vector<std::vector<int>>, par().momProjector + "_momList");
-        momResult.resize(nGammas);
-        for (auto &r: momResult)
+
+        auto &momList = envGet(std::vector<std::vector<int>>, par().momProjector + "_momList");
+        auto &mp      = envGetDerived(MPType, MPManyType, par().momProjector);
+        const unsigned int nmom = momList.size();
+
+        envGetTmp(std::vector<ColourMatrixField1>, traces);
+        envGetTmp(std::vector<ColourMatrixField1>, sourceCol);
+        envGetTmp(ColourMatrixField1, colA);
+        envGetTmp(ColourMatrixField1, colB);
+
+        // source: N_p = sum_y exp(-i p.y) M_A(y)^dag M_B(y) on the source time
+        // slice, from the conjugate of the projection of conj(M_A^dag M_B)
+        std::vector<std::vector<ColourMatrix1>> projSource;
+        std::vector<ColourMatrix1>              Np(nmom);
+
+        startTimer("source");
+        spinTrivialColour(colA, etaA, prod, par().etaA);
+        spinTrivialColour(colB, etaB, prod, par().etaB);
+        sourceCol[0] = adj(colA)*colB;
+        sourceCol[0] = conjugate(sourceCol[0]);
+        stopTimer("source");
+        startTimer("momentumProject");
+        mp.ProjectMany(sourceCol, projSource);
+        stopTimer("momentumProject");
+        for (unsigned int m = 0; m < nmom; ++m)
         {
+            Np[m] = conjugate(projSource[0][par().sourceTime + nt*m]);
+        }
+
+        // sink: Y(x) = tr_spin[phiB^dag g5 gSnk phiA adj(gSrc) g5] per gamma pair
+        momResult.resize(nGammas);
+        unsigned int i = 0;
+        for (auto &ss : gammaMap)
+        {
+            Gamma gSnk(ss.first);
+
+            if (ss.second.empty())
+            {
+                continue;
+            }
+            startTimer("sink");
+            sinkProd = adj(phiB)*g5*gSnk*phiA;
+            stopTimer("sink");
+            for (Gamma::Algebra &gammaSource : ss.second)
+            {
+                Gamma gSrc(gammaSource);
+
+                startTimer("sink");
+                prod      = sinkProd*(adj(gSrc)*g5);
+                traces[i] = traceSpin(prod);
+                stopTimer("sink");
+                momResult[i].gamma_snk = gSnk.g;
+                momResult[i].gamma_src = gSrc.g;
+                i++;
+            }
+        }
+
+        std::vector<std::vector<ColourMatrix1>> projSink;
+
+        startTimer("momentumProject");
+        mp.ProjectMany(traces, projSink);
+        stopTimer("momentumProject");
+        for (unsigned int g = 0; g < momResult.size(); ++g)
+        {
+            auto &r = momResult[g];
+
             r.source_time = par().sourceTime;
             r.noise_a     = par().noiseA;
             r.noise_b     = par().noiseB;
             r.flow_time   = par().flowTime;
-            r.momentum    = *momList;
-            r.corr.resize(momList->size(), std::vector<Complex>(nt));
+            r.momentum    = momList;
+            r.corr.resize(nmom, std::vector<Complex>(nt));
+            for (unsigned int m = 0; m < nmom; ++m)
+            for (int t = 0; t < nt; ++t)
+            {
+                r.corr[m][t] = TensorRemove(trace(projSink[g][t + nt*m]*Np[m]));
+            }
         }
     }
     else
@@ -347,66 +492,73 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
         {
             HADRONS_ERROR(Definition, "sink must be an MSink module");
         }
-        sink = &envGet(SinkFnScalar, par().sink);
-    }
 
-    // Use global lattice coordinates, rather than local grid indices, so the
-    // source-time restriction and sink slicing work with a distributed time direction.
-    Lattice<iScalar<vInteger>> time(phiA.Grid());
-    LatticeCoordinate(time, Tp);
-    PropagatorField1 source(phiA.Grid());
-    envGetTmp(LatticeComplex, c);
+        SinkFnScalar &sink   = envGet(SinkFnScalar, par().sink);
+        const bool   srcMom  = !par().sourceMom.empty();
+        envGetTmp(LatticeComplex, c);
 
-    unsigned int i = 0;
-    for (auto &ss : gammaMap)
-    {
-        Gamma::Algebra gammaSink = ss.first;
-        Gamma gSnk(gammaSink);
-
-        for (Gamma::Algebra &gammaSource : ss.second)
+        // source phase exp(-i p.y), opposite to the MSink::Point phase
+        if (srcMom)
         {
-            Gamma gSrc(gammaSource);
+            envGetTmp(LatticeComplex, coor);
+            envGetTmp(LatticeComplex, sourcePhase);
+            const Complex     im(0., 1.);
+            std::vector<Real> p = strToVec<Real>(par().sourceMom);
 
-            // This follows Meson.hpp: the source bilinear is Hermitian
-            // conjugated, while the sink gamma is not.
-            // P = sum_{y, y0=sourceTime} etaA^dag adj(Gamma_source) gamma5 etaB.
-            source = adj(etaA) * adj(gSrc) * g5 * etaB;
-            // This locates the flowed source operator at sourceTime; it does
-            // not restrict the temporal smearing already contained in its fields.
-            source = where(time == static_cast<int>(par().sourceTime), source, 0.*source);
-            //auto P = sum(source);
-            auto P = sliceSum(source, Tp)[par().sourceTime];
-
-            // Q = phiB^dag g5 Gamma_sink phiA.  Gamma5 hermiticity puts
-            // both wall-noise factors at the source rather than at the sink.
-            c = trace(adj(phiB) * g5 * gSnk * phiA * P);
-            if (projected)
+            if (p.size() != static_cast<unsigned int>(env().getNd() - 1))
             {
-                std::vector<TComplex> buf;
-
-                mp->Project(c, buf);
-                for (unsigned int m = 0; m < momList->size(); ++m)
-                for (int dt = 0; dt < nt; ++dt)
-                {
-                    momResult[i].corr[m][dt] = TensorRemove(buf[dt + nt*m]);
-                }
-                momResult[i].gamma_snk = gSnk.g;
-                momResult[i].gamma_src = gSrc.g;
+                HADRONS_ERROR(Size, "sourceMom must have " + std::to_string(env().getNd() - 1)
+                              + " components");
             }
-            else
+            sourcePhase = Zero();
+            for (unsigned int mu = 0; mu < p.size(); ++mu)
             {
-                std::vector<TComplex> buf = (*sink)(c);
+                LatticeCoordinate(coor, mu);
+                sourcePhase = sourcePhase + (p[mu]/env().getDim(mu))*coor;
+            }
+            sourcePhase = exp(static_cast<Real>(-2.*M_PI)*im*sourcePhase);
+            LOG(Message) << "(source momentum " << par().sourceMom << ")" << std::endl;
+        }
+
+        unsigned int i = 0;
+        for (auto &ss : gammaMap)
+        {
+            Gamma::Algebra gammaSink = ss.first;
+            Gamma gSnk(gammaSink);
+
+            for (Gamma::Algebra &gammaSource : ss.second)
+            {
+                Gamma gSrc(gammaSource);
+
+                // This follows Meson.hpp: the source bilinear is Hermitian
+                // conjugated, while the sink gamma is not.
+                // P = sum_{y, y0=sourceTime} [exp(-i p.y)] etaA^dag adj(Gamma_source) gamma5 etaB.
+                prod = adj(etaA) * adj(gSrc) * g5 * etaB;
+                if (srcMom)
+                {
+                    envGetTmp(LatticeComplex, sourcePhase);
+                    prod = sourcePhase*prod;
+                }
+                // This locates the flowed source operator at sourceTime; it does
+                // not restrict the temporal smearing already contained in its fields.
+                auto P = sliceSum(prod, Tp)[par().sourceTime];
+
+                // Q = phiB^dag g5 Gamma_sink phiA.  Gamma5 hermiticity puts
+                // both wall-noise factors at the source rather than at the sink.
+                c = trace(adj(phiB) * g5 * gSnk * phiA * P);
+
+                std::vector<TComplex> buf = sink(c);
                 for (int dt = 0; dt < nt; ++dt)
                 {
                     result[i].corr[dt] = TensorRemove(buf[dt]);
                 }
                 result[i].gamma_snk = gSnk.g;
                 result[i].gamma_src = gSrc.g;
+                i++;
             }
-            i++;
         }
     }
-    
+
     startTimer("I/O");
     auto &out = envGet(HadronsSerializable, getName());
     if (projected)
@@ -420,7 +572,7 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
         out = result;
     }
     stopTimer("I/O");
-    
+
     LOG(Message) << "Stochastic meson contraction complete." << std::endl;
 }
 

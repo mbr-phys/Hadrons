@@ -38,6 +38,7 @@
 #include <Hadrons/TimerArray.hpp>
 #include <Hadrons/Serialization.hpp>
 #include <Grid/algorithms/blas/MomentumProject.h>
+#include <Hadrons/MomentumProjectMany.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -59,7 +60,9 @@ BEGIN_HADRONS_NAMESPACE
                  or MPScalar) used instead of sink to project onto all its
                  momenta at once (string, optional). Exclusive with sink.
                  The result then holds, per gamma pair, the momenta (integer
-                 vectors) and corr indexed as [momentum][time].
+                 vectors) and corr indexed as [momentum][time]. The traces of
+                 all gamma pairs are projected together, with one GEMM
+                 (MomentumProjectMany).
 */
 
 /******************************************************************************
@@ -89,7 +92,8 @@ public:
     FERM_TYPE_ALIASES(FImpl2, 2);
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
-    using MPType = MomentumProject<ComplexField1, ComplexField1>;
+    using MPType     = MomentumProject<ComplexField1, ComplexField1>;
+    using MPManyType = MomentumProjectMany<ComplexField1, ComplexField1>;
     class Result: Serializable
     {
     public:
@@ -231,6 +235,14 @@ void TMeson<FImpl1, FImpl2>::setup(void)
     }
     envTmpLat(LatticeComplex, "c");
     envTmpLat(LatticePropagator, "q1Gq2");
+    if (!par().momProjector.empty())
+    {
+        // one trace per gamma pair, projected together
+        std::map<Gamma::Algebra, std::vector<Gamma::Algebra>> gammaMap;
+
+        envTmp(std::vector<ComplexField1>, "traces", 1, parseGammaString(gammaMap),
+               envGetGrid(ComplexField1));
+    }
     envCreate(HadronsSerializable, getName(), 1, 0);
 }
 
@@ -333,28 +345,14 @@ void TMeson<FImpl1, FImpl2>::execute(void)
 
                 if (projected)
                 {
-                    auto &momList = envGet(std::vector<std::vector<int>>,
-                                           par().momProjector + "_momList");
-                    auto &mp      = envGet(MPType, par().momProjector);
+                    // projected below, together with the other gamma pairs
+                    envGetTmp(std::vector<ComplexField1>, traces);
 
                     startTimer("mesonConnected");
-                    c = trace(mesonConnected2(q1Gq2, gSrc));
+                    traces[i] = trace(mesonConnected2(q1Gq2, gSrc));
                     stopTimer("mesonConnected");
-                    startTimer("momentumProject");
-                    mp.Project(c, buf);
-                    stopTimer("momentumProject");
                     momResult[i].gamma_snk = gSnk.g;
                     momResult[i].gamma_src = gSrc.g;
-                    momResult[i].momentum  = momList;
-                    momResult[i].corr.resize(momList.size());
-                    for (unsigned int m = 0; m < momList.size(); ++m)
-                    {
-                        momResult[i].corr[m].resize(nt);
-                        for (int t = 0; t < nt; ++t)
-                        {
-                            momResult[i].corr[m][t] = TensorRemove(buf[t + nt*m]);
-                        }
-                    }
                     i++;
                     continue;
                 }
@@ -388,6 +386,31 @@ void TMeson<FImpl1, FImpl2>::execute(void)
                 result[i].gamma_snk = gSnk.g;
                 result[i].gamma_src = gSrc.g;
                 i++;
+            }
+        }
+        if (projected)
+        {
+            auto &momList = envGet(std::vector<std::vector<int>>,
+                                   par().momProjector + "_momList");
+            auto &mp      = envGetDerived(MPType, MPManyType, par().momProjector);
+            std::vector<std::vector<typename ComplexField1::scalar_object>> projTraces;
+            envGetTmp(std::vector<ComplexField1>, traces);
+
+            startTimer("momentumProject");
+            mp.ProjectMany(traces, projTraces);
+            stopTimer("momentumProject");
+            for (unsigned int g = 0; g < momResult.size(); ++g)
+            {
+                momResult[g].momentum = momList;
+                momResult[g].corr.resize(momList.size());
+                for (unsigned int m = 0; m < momList.size(); ++m)
+                {
+                    momResult[g].corr[m].resize(nt);
+                    for (int t = 0; t < nt; ++t)
+                    {
+                        momResult[g].corr[m][t] = TensorRemove(projTraces[g][t + nt*m]);
+                    }
+                }
             }
         }
     }

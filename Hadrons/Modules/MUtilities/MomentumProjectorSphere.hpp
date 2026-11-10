@@ -32,6 +32,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
 #include <Grid/algorithms/blas/MomentumProject.h>
+#include <Hadrons/MomentumProjectMany.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -51,7 +52,8 @@ template<typename Field, typename ComplexField>
 class TMomentumProjectorSphere: public Module<MomentumProjectorSpherePar>
 {
 public:
-    using MPType = MomentumProject<Field, ComplexField>;
+    using MPType     = MomentumProject<Field, ComplexField>;
+    using MPManyType = MomentumProjectMany<Field, ComplexField>;
     // constructor
     TMomentumProjectorSphere(const std::string name);
     // destructor
@@ -110,7 +112,9 @@ void TMomentumProjectorSphere<Field, ComplexField>::setup(void)
     envTmpLat(ComplexField, "coor");
 
     // MomentumProject instance
-    env().template createObject<MPType>(getName(), Environment::Storage::standard, 0);
+    // stored as MPType, so that envGet(MPType, ...) works; envGetDerived
+    // gives the MomentumProjectMany interface
+    env().template createDerivedObject<MPType, MPManyType>(getName(), Environment::Storage::standard, 0);
 
     // List of momenta
     const unsigned int nd = env().getNd() - 1;

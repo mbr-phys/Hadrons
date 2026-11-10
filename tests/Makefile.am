@@ -26,6 +26,7 @@ EXTRA_PROGRAMS = \
   Test_sigma_to_nucleon     \
   Test_stoch_distil         \
   Test_stochastic_meson     \
+  Test_time_block_noise     \
   Test_xi_to_sigma          \
   Test_wilsonclover_solvers \
   Test_wilsonclover_solvers_obc
@@ -105,6 +106,9 @@ Test_stoch_distil_LDADD=-lHadrons -lGrid
 
 Test_stochastic_meson_SOURCES=Test_stochastic_meson.cpp
 Test_stochastic_meson_LDADD=-lHadrons -lGrid
+
+Test_time_block_noise_SOURCES=Test_time_block_noise.cpp
+Test_time_block_noise_LDADD=-lHadrons -lGrid
 
 Test_xi_to_sigma_SOURCES=Test_xi_to_sigma.cpp
 Test_xi_to_sigma_LDADD=-lHadrons -lGrid

@@ -160,6 +160,34 @@ private:
     LatticeInteger coor_;
 };
 
+// Time-block dilution. The blocks [blockStarts[b], blockStarts[b + 1]) (the
+// last one ending at Nt) partition the time extent, and component i is base
+// noise i / nBlock restricted to block i % nBlock. Summing the components of
+// a base noise therefore gives back the undiluted noise. A block around a
+// source time t0 contains the support of a flowed source operator at t0 if it
+// covers [t0 - w, t0 + w] for a few sqrt(8 t) <~ w.
+template <typename FImpl>
+class TimeBlockNoise: public SpinColorDiagonalNoise<FImpl>
+{
+public:
+    typedef typename FImpl::FermionField FermionField;
+    typedef typename FImpl::PropagatorField PropagatorField;
+public:
+    // constructor/destructor
+    TimeBlockNoise(GridCartesian *g, const int nNoise,
+                   const std::vector<unsigned int> &blockStarts);
+    virtual ~TimeBlockNoise(void) = default;
+    int dilutionSize(void) const;
+    // number of blocks, and the time slices [begin, end) of block b
+    unsigned int nBlock(void) const;
+    unsigned int blockBegin(const unsigned int b) const;
+    unsigned int blockEnd(const unsigned int b) const;
+private:
+    void setProp(const int i);
+    std::vector<unsigned int>  blockStarts_;
+    Lattice<iScalar<vInteger>> tLat_;
+};
+
 /******************************************************************************
  *                 Abstract container for distillation noise                  *
  ******************************************************************************/
@@ -534,6 +562,74 @@ void SparseNoise<FImpl>::setProp(const int i)
         divs = std::div(divs.rem, pow(nSparse_, nd-(d+1)));
         eta = Cshift(eta, d, divs.quot);
     }
+    this->setPropagator(eta);
+}
+
+/******************************************************************************
+ *                  TimeBlockNoise template implementation                    *
+ ******************************************************************************/
+template <typename FImpl>
+TimeBlockNoise<FImpl>::
+TimeBlockNoise(GridCartesian *g, int nNoise, const std::vector<unsigned int> &blockStarts)
+: SpinColorDiagonalNoise<FImpl>(g, nNoise), blockStarts_(blockStarts), tLat_(g)
+{
+    const unsigned int nt = g->GlobalDimensions()[Tp];
+
+    if (blockStarts_.empty() or (blockStarts_[0] != 0))
+    {
+        HADRONS_ERROR(Argument, "time blocks must start at t = 0");
+    }
+    for (unsigned int b = 1; b < blockStarts_.size(); ++b)
+    {
+        if (blockStarts_[b] <= blockStarts_[b - 1])
+        {
+            HADRONS_ERROR(Argument, "time block starts must be strictly increasing");
+        }
+    }
+    if (blockStarts_.back() >= nt)
+    {
+        HADRONS_ERROR(Argument, "time block starts must be smaller than Nt");
+    }
+    LatticeCoordinate(tLat_, Tp);
+}
+
+template <typename FImpl>
+int TimeBlockNoise<FImpl>::dilutionSize() const
+{
+    return this->size()*blockStarts_.size();
+}
+
+template <typename FImpl>
+unsigned int TimeBlockNoise<FImpl>::nBlock(void) const
+{
+    return blockStarts_.size();
+}
+
+template <typename FImpl>
+unsigned int TimeBlockNoise<FImpl>::blockBegin(const unsigned int b) const
+{
+    return blockStarts_.at(b);
+}
+
+template <typename FImpl>
+unsigned int TimeBlockNoise<FImpl>::blockEnd(const unsigned int b) const
+{
+    return (b + 1 < blockStarts_.size()) ? blockStarts_.at(b + 1)
+                                         : this->getGrid()->GlobalDimensions()[Tp];
+}
+
+template <typename FImpl>
+void TimeBlockNoise<FImpl>::setProp(const int i)
+{
+    auto &eta   = this->getEta();
+    auto &noise = this->getNoise();
+
+    std::div_t divs  = std::div(i, static_cast<int>(blockStarts_.size()));
+    const int  begin = blockBegin(divs.rem);
+    const int  end   = blockEnd(divs.rem);
+
+    eta = where((tLat_ < Integer(begin)), 0.*noise[divs.quot], noise[divs.quot]);
+    eta = where((tLat_ < Integer(end)), eta, 0.*eta);
     this->setPropagator(eta);
 }
 

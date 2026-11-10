@@ -11,9 +11,15 @@
  * Checks the batched momentum projection (MUtilities::MomentumProjectorList
  * plus the momProjector parameter) against the per-momentum path, for
  * MContraction::Meson (MSink::ScalarPoint sinks, both phase signs),
- * MContraction::StochasticMeson (same sinks, non-zero source time) and
+ * MContraction::StochasticMeson (same sinks with the source projected onto
+ * the opposite momentum through sourceMom, non-zero source time; the
+ * projected path builds its source phases separately) and
  * MContraction::ContractConservedSink
- * (moms), vector and axial, all directions. The momenta include negative and
+ * (moms), vector and axial, all directions. Meson projects all its gamma pairs
+ * with one MomentumProjectMany call, so its comparison also checks that
+ * packing; MomentumProjectMany is further checked directly, for scalar and
+ * colour-matrix fields, against Project on each field and colour component.
+ * The momenta include negative and
  * single-component ones, so a sign error in the phase is caught. Run it once
  * with the time direction split across ranks (e.g. --mpi 1.1.1.2) to check the
  * global sum in MomentumProject.
@@ -232,6 +238,7 @@ int main(int argc, char *argv[])
 
         stPar.sink         = "snk" + k;
         stPar.momProjector = "";
+        stPar.sourceMom    = momenta[m];
         stPar.output       = dir + "/stoch_" + k;
         application.createModule<MContraction::StochasticMeson>("stoch_" + k, stPar);
     }
@@ -245,6 +252,70 @@ int main(int argc, char *argv[])
     Environment::getInstance().getGrid()->Barrier();
 
     bool pass = true;
+
+    // MomentumProjectMany directly: several scalar fields, and colour-matrix
+    // fields, in one projection each, against Project on every field and
+    // colour component separately
+    {
+        GridCartesian   *grid = Environment::getInstance().getGrid();
+        GridParallelRNG rng(grid);
+        const Complex   i(0., 1.);
+        LatticeComplex  coor(grid), ph(grid);
+        std::vector<LatticeComplex> phases;
+
+        rng.SeedFixedIntegers({5, 6, 7, 8});
+        for (auto &s: momenta)
+        {
+            auto p = momVec(s);
+
+            ph = Zero();
+            for (unsigned int mu = 0; mu < p.size(); ++mu)
+            {
+                LatticeCoordinate(coor, mu);
+                ph = ph + (static_cast<Real>(p[mu])/static_cast<Real>(grid->GlobalDimensions()[mu]))*coor;
+            }
+            phases.push_back(exp(static_cast<Real>(2*M_PI)*i*ph));
+        }
+
+        MomentumProjectMany<LatticeComplex, LatticeComplex> mp;
+        mp.Allocate(momenta.size(), grid);
+        mp.ImportMomenta(phases);
+
+        const int nt = grid->GlobalDimensions()[Tp];
+        std::vector<LatticeComplex>            scalars(3, grid);
+        std::vector<LatticeColourMatrix>       matrices(2, grid);
+        std::vector<std::vector<TComplex>>     projScalars;
+        std::vector<std::vector<ColourMatrix>> projMatrices;
+        std::vector<TComplex>                  ref;
+        LatticeComplex                         comp(grid);
+        Diff                                   dScalar, dMatrix;
+
+        for (auto &f: scalars)  gaussian(rng, f);
+        for (auto &f: matrices) gaussian(rng, f);
+        mp.ProjectMany(scalars, projScalars);
+        mp.ProjectMany(matrices, projMatrices);
+        for (unsigned int f = 0; f < scalars.size(); ++f)
+        {
+            mp.Project(scalars[f], ref);
+            for (unsigned int k = 0; k < momenta.size()*nt; ++k)
+            {
+                dScalar.add(TensorRemove(ref[k]), TensorRemove(projScalars[f][k]));
+            }
+        }
+        for (unsigned int f = 0; f < matrices.size(); ++f)
+        for (int a = 0; a < Nc; ++a)
+        for (int b = 0; b < Nc; ++b)
+        {
+            comp = peekColour(matrices[f], a, b);
+            mp.Project(comp, ref);
+            for (unsigned int k = 0; k < momenta.size()*nt; ++k)
+            {
+                dMatrix.add(TensorRemove(ref[k]), projMatrices[f][k]()()(a, b));
+            }
+        }
+        pass &= dScalar.pass("MomentumProjectMany, scalar fields", tol);
+        pass &= dMatrix.pass("MomentumProjectMany, colour-matrix fields", tol);
+    }
 
     {
         typedef MContraction::Meson::Result    Result;
