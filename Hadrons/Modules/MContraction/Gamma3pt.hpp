@@ -36,6 +36,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
 #include <Grid/algorithms/blas/MomentumProject.h>
+#include <Hadrons/MomentumProjectMany.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -137,7 +138,8 @@ class TGamma3pt: public Module<Gamma3ptPar>
     FERM_TYPE_ALIASES(FImpl3, 3);
     using SpinField = SpinMatrixField1;
     using PhaseField = ComplexField1;
-    using MPType = MomentumProject<PhaseField, PhaseField>;
+    // the type stored by the projector modules
+    using MPType = MomentumProjectMany<PhaseField, PhaseField>;
 
 public:
     class GammaTriad: Serializable

@@ -52,7 +52,6 @@ template<typename Field, typename ComplexField>
 class TMomentumProjectorSphere: public Module<MomentumProjectorSpherePar>
 {
 public:
-    using MPType     = MomentumProject<Field, ComplexField>;
     using MPManyType = MomentumProjectMany<Field, ComplexField>;
     // constructor
     TMomentumProjectorSphere(const std::string name);
@@ -112,9 +111,10 @@ void TMomentumProjectorSphere<Field, ComplexField>::setup(void)
     envTmpLat(ComplexField, "coor");
 
     // MomentumProject instance
-    // stored as MPType, so that envGet(MPType, ...) works; envGetDerived
-    // gives the MomentumProjectMany interface
-    env().template createDerivedObject<MPType, MPManyType>(getName(), Environment::Storage::standard, 0);
+    // MomentumProject has no virtual functions, so the object is stored with
+    // its full type MomentumProjectMany; consumers get it as such, and use
+    // either Project (single field) or ProjectMany
+    env().template createObject<MPManyType>(getName(), Environment::Storage::standard, 0);
 
     // List of momenta
     const unsigned int nd = env().getNd() - 1;
@@ -185,7 +185,7 @@ void TMomentumProjectorSphere<Field, ComplexField>::execute(void)
     Complex i(0.0,1.0);
     envGetTmp(ComplexField, coor);
 
-    auto &MP = envGet(MPType, getName());
+    auto &MP = envGet(MPManyType, getName());
     auto &phases = envGet(std::vector<ComplexField>, getName() + "_phases");
     auto &momList = envGet(std::vector<std::vector<int>>, getName() + "_momList");
 

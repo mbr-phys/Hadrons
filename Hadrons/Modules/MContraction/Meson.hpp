@@ -92,7 +92,6 @@ public:
     FERM_TYPE_ALIASES(FImpl2, 2);
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
-    using MPType     = MomentumProject<ComplexField1, ComplexField1>;
     using MPManyType = MomentumProjectMany<ComplexField1, ComplexField1>;
     class Result: Serializable
     {
@@ -392,7 +391,7 @@ void TMeson<FImpl1, FImpl2>::execute(void)
         {
             auto &momList = envGet(std::vector<std::vector<int>>,
                                    par().momProjector + "_momList");
-            auto &mp      = envGetDerived(MPType, MPManyType, par().momProjector);
+            auto &mp      = envGet(MPManyType, par().momProjector);
             std::vector<std::vector<typename ComplexField1::scalar_object>> projTraces;
             envGetTmp(std::vector<ComplexField1>, traces);
 

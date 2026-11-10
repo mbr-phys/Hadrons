@@ -32,6 +32,7 @@
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
 #include <Grid/algorithms/blas/MomentumProject.h>
+#include <Hadrons/MomentumProjectMany.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -79,7 +80,8 @@ class TContractConservedSink: public Module<ContractConservedSinkPar>
 {
 public:
     FERM_TYPE_ALIASES(FImpl,);
-    using MPType = MomentumProject<ComplexField, ComplexField>;
+    // the type stored by the projector modules
+    using MPType = MomentumProjectMany<ComplexField, ComplexField>;
     class Result: Serializable
     {
     public:

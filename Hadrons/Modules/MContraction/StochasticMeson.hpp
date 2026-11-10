@@ -129,7 +129,6 @@ public:
     FERM_TYPE_ALIASES(FImpl2, 2);
     BASIC_TYPE_ALIASES(ScalarImplCR, Scalar);
     SINK_TYPE_ALIASES(Scalar);
-    using MPType     = MomentumProject<ComplexField1, ComplexField1>;
     using MPManyType = MomentumProjectMany<ComplexField1, ComplexField1>;
     typedef Lattice<iScalar<iScalar<iMatrix<typename ComplexField1::vector_type, Nc>>>> ColourMatrixField1;
     typedef typename ColourMatrixField1::scalar_object                                  ColourMatrix1;
@@ -401,7 +400,7 @@ void TStochasticMeson<FImpl1, FImpl2>::execute(void)
                      << "')" << std::endl;
 
         auto &momList = envGet(std::vector<std::vector<int>>, par().momProjector + "_momList");
-        auto &mp      = envGetDerived(MPType, MPManyType, par().momProjector);
+        auto &mp      = envGet(MPManyType, par().momProjector);
         const unsigned int nmom = momList.size();
 
         envGetTmp(std::vector<ColourMatrixField1>, traces);
