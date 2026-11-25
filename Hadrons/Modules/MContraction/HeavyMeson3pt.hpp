@@ -66,6 +66,16 @@ BEGIN_HADRONS_NAMESPACE
  *   vertex X = gV this is exactly MContraction::Gamma3pt with q1 the
  *   spectator sinked with adj(sinkNoise).
  *
+ *   Orientation: with q2 = qSrc adjointed and q3 = qSnk, the heavy quark line
+ *   runs (qSnk wall) -> x -> (qSrc wall). To measure the meson containing the
+ *   heavy QUARK Q propagating forward in time from t_i to t_f, pass
+ *   qSnk = heavy from t_i and qSrc = heavy from t_f (the module's "source" /
+ *   "sink" names follow the Gamma3pt convention, not the time ordering), with
+ *   spectator = light from t_f, sinkNoise = the source of wall t_i and
+ *   tSnk = t_i. Passing the heavy legs the other way round gives the
+ *   charge-conjugate (heavy-antiquark) state: C-odd vertices keep their sign
+ *   relative to GammaT, C-even ones flip (e.g. <Qbar gamma^0 Q> = -1).
+ *
  *   gamma: vector of "sink vertex source" triads, as in Gamma3pt. Sink and
  *   source are gamma matrices or "all"; the vertex is
  *     - a gamma matrix gV or "all" (X = gV, as in Gamma3pt), or
@@ -88,7 +98,12 @@ BEGIN_HADRONS_NAMESPACE
  *     The Hermitian (spin-orbit) part of DiSigmaE is 1/2 (DiSigmaE + sigmaEDi),
  *     and DiSigmaE - sigmaEDi is a point-split form of sigmaCurlE (equal up to
  *     O(a^2)), so DiSigmaE - sigmaCurlE/2 and sigmaEDi + sigmaCurlE/2 are two
- *     discretisations of it (as DiE and divE are for the Darwin term).
+ *     discretisations of it.
+ *     Darwin term: DiE and divE are NOT two discretisations of the same
+ *     operator. DiE = sum_i D_i (E_i q) = divE + sum_i E_i D_i (in the
+ *     continuum; point-split on the lattice), and its physical (Hermitian)
+ *     part satisfies Re<DiE> = 1/2 <divE> after the ensemble average (not
+ *     configuration by configuration), i.e. the factor 1/2 matters.
  *     chirality-even partners of the operators above, needed for the
  *     positive-flow-time mixing (gf_lifetime_notes, operator basis):
  *       gD4      gamma_4 D_4                        (twist-2 T_44)

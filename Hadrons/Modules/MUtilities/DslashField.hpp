@@ -30,6 +30,7 @@
 #include <Hadrons/Module.hpp>
 #include <Hadrons/ModuleFactory.hpp>
 #include <Hadrons/Serialization.hpp>
+#include <Hadrons/Modules/MUtilities/DerivHelpers.hpp>
 
 BEGIN_HADRONS_NAMESPACE
 
@@ -38,6 +39,15 @@ BEGIN_HADRONS_NAMESPACE
  * ----------------------------------------------------
  * Applies the symmetric covariant derivative to a fermion field:
  *   Dslash psi(x) = 1/2 sum_mu gamma_mu [U_mu(x) psi(x+mu) - U^dagger_mu(x-mu) psi(x-mu)]
+ * 
+ * Temporal boundary condition: the gauge field (e.g. a flowed <flow>_U) is
+ * stored without any boundary phase, whereas the fermion flow and the
+ * propagators use antiperiodic time. The link U_Tp on the last time slice is
+ * therefore multiplied by the fermion temporal boundary phase
+ * dslashTimeBoundaryPhase = -1 (antiperiodic) before the shifts, as in
+ * MUtilities/DerivHelpers.hpp. This is FIXED to antiperiodic time for now; if
+ * periodic or open boundaries are needed it should become a `bc` parameter
+ * (as in MUtilities::CovariantDerivative and MContraction::HeavyMeson3pt).
  * 
  * Parameters:
  * - input: input field (FermionField or PropagatorField)
@@ -49,6 +59,10 @@ BEGIN_HADRONS_NAMESPACE
  *                            TDslashField                                    *
  ******************************************************************************/
 BEGIN_MODULE_NAMESPACE(MUtilities)
+
+// fermion temporal boundary phase used by DslashField: fixed to antiperiodic
+// time for now (should become a `bc` parameter if other boundaries are needed)
+constexpr int dslashTimeBoundaryPhase = -1;
 
 class DslashFieldPar: Serializable
 {
@@ -157,11 +171,15 @@ void TDslashField<FImpl, Field>::computeDslash(Field &out, const Field &in, cons
     // Dslash psi(x) = 1/2 sum_mu gamma_mu [U_mu(x) psi(x+mu) - U^dagger_mu(x-mu) psi(x-mu)]
     // This follows the NPRUtils::dslash convention
     
+    // The link in direction Tp on the last time slice carries the fermion
+    // temporal boundary phase (antiperiodic, see dslashTimeBoundaryPhase).
+    
     out = Zero();
     Field tmp(in.Grid());
+    typename FImpl::GaugeLinkField U_mu(U.Grid());
     
     for (int mu = 0; mu < Nd; mu++) {
-        auto U_mu = peekLorentz(U, mu);
+        boundaryLink<FImpl>(U_mu, U, mu, dslashTimeBoundaryPhase);
         
         tmp = FImpl::CovShiftForward(U_mu, mu, in);
         tmp = tmp - FImpl::CovShiftBackward(U_mu, mu, in);

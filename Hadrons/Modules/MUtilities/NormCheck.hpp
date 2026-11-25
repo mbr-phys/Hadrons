@@ -118,8 +118,12 @@ void TNormCheck<Field>::execute(void)
         const auto &reference = envGet(Field, par().reference);
         result.referenceNorm2 = norm2(reference);
         result.innerProduct = innerProduct(field, reference);
-        result.differenceNorm2 = result.norm2 + result.referenceNorm2
-                               - 2.0*real(result.innerProduct);
+        // |a - b|^2 computed directly (|a|^2 + |b|^2 - 2 Re(a,b) cancels
+        // catastrophically when a ~ b)
+        Field difference(field.Grid());
+
+        difference             = field - reference;
+        result.differenceNorm2 = norm2(difference);
 
         const double denominator = std::sqrt(result.norm2)
                                  + std::sqrt(result.referenceNorm2);

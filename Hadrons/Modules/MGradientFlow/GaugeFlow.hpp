@@ -79,6 +79,12 @@ public:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    // names of the saved gauge snapshots / RK stages (single source for
+    // getOutput, setup and execute, built from the integer step)
+    std::string snapshotName(const int step);
+    std::string stageName(const int stage, const int step);
+    std::vector<std::string> savedNames(void);
 };
 
 MODULE_REGISTER_TMP(WilsonFlow, ARG(TGaugeFlow<GIMPL,WilsonAction<GIMPL>>), MGradientFlow);
@@ -108,32 +114,51 @@ template <typename GImpl,typename FlowAction>
 std::vector<std::string> TGaugeFlow<GImpl,FlowAction>::getOutput(void)
 {
     std::vector<std::string> out = {getName(),getName()+"_U"};
+    std::vector<std::string> saved = savedNames();
 
+    out.insert(out.end(), saved.begin(), saved.end());
+    
+    return out;
+}
+
+// output names ////////////////////////////////////////////////////////////////
+template <typename GImpl,typename FlowAction>
+std::string TGaugeFlow<GImpl,FlowAction>::snapshotName(const int step)
+{
+    return getName()+"_U_t"+flowTimeString(step, par().step_size);
+}
+
+// RK stage W1/W2 of the step starting at flow time step*step_size
+template <typename GImpl,typename FlowAction>
+std::string TGaugeFlow<GImpl,FlowAction>::stageName(const int stage, const int step)
+{
+    return getName()+"_W"+std::to_string(stage)+"_t"+flowTimeString(step, par().step_size);
+}
+
+template <typename GImpl,typename FlowAction>
+std::vector<std::string> TGaugeFlow<GImpl,FlowAction>::savedNames(void)
+{
+    std::vector<std::string> names;
+
+    checkFlowSteps(par().steps, par().step_size, par().meas_interval);
     // Retain fixed-step gauge snapshots only when requested. Adaptive flow has
     // a runtime-dependent schedule and therefore only publishes its final
     // field through getName()+"_U".
     if (par().save_history && par().maxTau.empty()) {
-        out.push_back(getName()+"_U_t0.00");
-        for (int i = 1; i <= par().steps; i++) {
-            if ((i % par().meas_interval == 0) || (i == par().steps)) {
-                double ft = par().step_size * i;
-                std::stringstream ftt;
-                ftt << std::fixed << std::setprecision(2) << ft;
-                out.push_back(getName()+"_U_t"+ftt.str());
-            }
+        names.push_back(snapshotName(0));
+        for (int step: flowSaveSteps(par().steps, par().step_size, par().meas_interval)) {
+            names.push_back(snapshotName(step));
         }
     }
     if (par().save_rk_stages && par().save_history && par().maxTau.empty()) {
-        for (int i = 0; i < par().steps; i++) {
-            double ft = par().step_size * i;
-            std::stringstream ftt;
-            ftt << std::fixed << std::setprecision(2) << ft;
-            out.push_back(getName()+"_W1_t"+ftt.str());
-            out.push_back(getName()+"_W2_t"+ftt.str());
+        for (int step = 0; step < par().steps; step++) {
+            names.push_back(stageName(1, step));
+            names.push_back(stageName(2, step));
         }
     }
-    
-    return out;
+    checkUniqueNames(names);
+
+    return names;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
@@ -144,31 +169,20 @@ void TGaugeFlow<GImpl,FlowAction>::setup(void)
         (!par().save_history || !par().maxTau.empty() || par().meas_interval != 1)) {
         HADRONS_ERROR(Argument, "save_rk_stages requires fixed-step save_history with meas_interval = 1");
     }
+    // checked before any std::stod(c_plaq/c_rect) below
+    if constexpr (std::is_same_v<FlowAction, PlaqPlusRectangleAction<GImpl>>) {
+        if (par().c_plaq.empty() || par().c_rect.empty()) {
+            HADRONS_ERROR(Argument, "to use PlaqPlusRectangleAction (CustomFlow), pass some value to both c_plaq and c_rect");
+        }
+    }
 
     double mTau = -1.0;
     if(!par().maxTau.empty()) {
         mTau = std::stod(par().maxTau);
     }
     envCreateLat(GaugeField, getName()+"_U");
-    if (par().save_history && par().maxTau.empty()) {
-        envCreateLat(GaugeField, getName()+"_U_t0.00");
-        for (int i = 1; i <= par().steps; i++) {
-            if ((i % par().meas_interval == 0) || (i == par().steps)) {
-                double ft = par().step_size * i;
-                std::stringstream ftt;
-                ftt << std::fixed << std::setprecision(2) << ft;
-                envCreateLat(GaugeField, getName()+"_U_t"+ftt.str());
-            }
-        }
-    }
-    if (par().save_rk_stages && par().save_history && par().maxTau.empty()) {
-        for (int i = 0; i < par().steps; i++) {
-            double ft = par().step_size * i;
-            std::stringstream ftt;
-            ftt << std::fixed << std::setprecision(2) << ft;
-            envCreateLat(GaugeField, getName()+"_W1_t"+ftt.str());
-            envCreateLat(GaugeField, getName()+"_W2_t"+ftt.str());
-        }
+    for (auto &n: savedNames()) {
+        envCreateLat(GaugeField, n);
     }
     envCreate(HadronsSerializable, getName(), 1, 0);
     if constexpr (std::is_same_v<FlowAction, PlaqPlusRectangleAction<GImpl>>) {
@@ -181,10 +195,6 @@ void TGaugeFlow<GImpl,FlowAction>::setup(void)
     }
     // create action -> if c_plaq and c_rect are used, called PlaqPlusRectangleAction
     if constexpr (std::is_same_v<FlowAction, PlaqPlusRectangleAction<GImpl>>) {
-        if (par().c_plaq.empty() || par().c_plaq.empty()) {
-            std::cerr << "Error: to use PlaqPlusRectangleAction (CustomFlow), pass some value to both c_plaq and c_rect." << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
         envTmp(FlowAction, "action", 1, std::stod(par().c_plaq),std::stod(par().c_rect));  
     } else {
         envTmp(FlowAction, "action", 1, 3.0);
@@ -213,7 +223,7 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
     
     Uwf = U;
     if (par().save_history && par().maxTau.empty()) {
-        auto &U0 = envGet(GaugeField, getName()+"_U_t0.00");
+        auto &U0 = envGet(GaugeField, snapshotName(0));
         U0 = Uwf;
     }
     double flowt = 0.0;
@@ -241,8 +251,9 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
                 }
             } while (evolve.taus < mTau);
         } else {
-            for (unsigned int step = 1; step <= par().steps; step++) {
-                flowt += evolve.epsilon;
+            for (int step = 1; step <= par().steps; step++) {
+                // flow time from the integer step (same as the object names)
+                flowt = par().step_size*step;
                 LOG(Message) << "Step " << step << " (tau = "<< flowt << ")" << std::endl;
                 startTimer("evolution");
                 std::vector<GaugeField> &Wi = evolve.evolve_gauge(Uwf);
@@ -254,18 +265,13 @@ void TGaugeFlow<GImpl,FlowAction>::execute(void)
                     stopTimer("observables");
                 }
                 if (par().save_history &&
-                    ((step % par().meas_interval == 0) || (step == par().steps))) {
-                    std::stringstream ftt;
-                    ftt << std::fixed << std::setprecision(2) << flowt;
-                    auto &Us = envGet(GaugeField, getName()+"_U_t"+ftt.str());
+                    isFlowSaveStep(step, par().steps, par().meas_interval)) {
+                    auto &Us = envGet(GaugeField, snapshotName(step));
                     Us = Uwf;
                 }
                 if (par().save_rk_stages) {
-                    double startTime = par().step_size * (step - 1);
-                    std::stringstream ftt;
-                    ftt << std::fixed << std::setprecision(2) << startTime;
-                    auto &W1 = envGet(GaugeField, getName()+"_W1_t"+ftt.str());
-                    auto &W2 = envGet(GaugeField, getName()+"_W2_t"+ftt.str());
+                    auto &W1 = envGet(GaugeField, stageName(1, step - 1));
+                    auto &W2 = envGet(GaugeField, stageName(2, step - 1));
                     W1 = Wi[1];
                     W2 = Wi[2];
                 }

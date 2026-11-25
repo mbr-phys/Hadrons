@@ -178,6 +178,78 @@ public:
 
 
 
+// flow-step bookkeeping ///////////////////////////////////////////////////////
+// Shared by getOutput, setup and execute of the flow modules, so that the
+// object names they build cannot disagree (names are always built from the
+// integer step, never from a running sum of step sizes).
+
+// check the fixed-step flow parameters
+inline void checkFlowSteps(const int steps, const double stepSize, const int measInterval)
+{
+    if (steps < 0)
+    {
+        HADRONS_ERROR(Argument, "steps must be >= 0");
+    }
+    if (!(stepSize > 0.))
+    {
+        HADRONS_ERROR(Argument, "step_size must be > 0");
+    }
+    if ((steps > 0) and (measInterval < 1))
+    {
+        HADRONS_ERROR(Argument, "meas_interval must be >= 1");
+    }
+}
+
+// flow time reached after `step` steps of size stepSize, as used in names
+inline std::string flowTimeString(const int step, const double stepSize)
+{
+    std::stringstream ftt;
+
+    ftt << std::fixed << std::setprecision(2) << stepSize*step;
+
+    return ftt.str();
+}
+
+// steps (1..steps) at which flowed objects are saved: multiples of
+// measInterval and the last step
+inline bool isFlowSaveStep(const int step, const int steps, const int measInterval)
+{
+    return ((step % measInterval) == 0) or (step == steps);
+}
+
+inline std::vector<int> flowSaveSteps(const int steps, const double stepSize, const int measInterval)
+{
+    std::vector<int> saveSteps;
+
+    checkFlowSteps(steps, stepSize, measInterval);
+    for (int step = 1; step <= steps; step++)
+    {
+        if (isFlowSaveStep(step, steps, measInterval))
+        {
+            saveSteps.push_back(step);
+        }
+    }
+
+    return saveSteps;
+}
+
+// error if a list of object names contains duplicates (e.g. two flow times
+// that round to the same %.2f string)
+inline void checkUniqueNames(const std::vector<std::string> &names)
+{
+    std::set<std::string> seen;
+
+    for (auto &n: names)
+    {
+        if (!seen.insert(n).second)
+        {
+            HADRONS_ERROR(Argument, "output name '" + n + "' would be created more than once "
+                          "(flow times are printed with 2 decimals: check step_size, "
+                          "meas_interval and outProps)");
+        }
+    }
+}
+
 // field evolution /////////////////////////////////////////////////////////////
 template <typename FlowAction, typename GImpl, typename FImpl>
 class Evolution {
@@ -188,8 +260,18 @@ class Evolution {
         GridBase *grid_;
         GaugeLinkField linkBuf_;
         GaugeField zBuf1_, zBuf2_, uBuf1_, uBuf2_;
-        TimerArray &timer_;
+        TimerArray *timer_; // optional (may be nullptr): timing of the gauge force
         std::vector<GaugeField> Wi_;
+
+        void startDerivTimer(void)
+        {
+            if (timer_ != nullptr) timer_->startTimer("evolution_deriv");
+        }
+
+        void stopDerivTimer(void)
+        {
+            if (timer_ != nullptr) timer_->stopTimer("evolution_deriv");
+        }
 
     public:
         double epsilon, maxTau, taus;
@@ -199,7 +281,7 @@ class Evolution {
         Evolution(GridBase *grid, double beta, double step, double mTau, double ts, TimerArray *timer = nullptr) 
         : SG(FlowAction(beta)), epsilon(step), maxTau(mTau), taus(ts)
         , grid_(grid), linkBuf_(grid), zBuf1_(grid), zBuf2_(grid)
-        , uBuf1_(grid), uBuf2_(grid), timer_(*timer)
+        , uBuf1_(grid), uBuf2_(grid), timer_(timer)
         {
             Wi_.resize(5, grid);
         }
@@ -208,7 +290,7 @@ class Evolution {
         Evolution(GridBase *grid, double c_plaq, double c_rect, double step, double mTau, double ts, TimerArray *timer = nullptr) 
         : SG(FlowAction(c_plaq, c_rect)), epsilon(step), maxTau(mTau), taus(ts)
         , grid_(grid), linkBuf_(grid), zBuf1_(grid), zBuf2_(grid)
-        , uBuf1_(grid), uBuf2_(grid), timer_(*timer)
+        , uBuf1_(grid), uBuf2_(grid), timer_(timer)
         {
             Wi_.resize(5, grid);
         }
@@ -262,26 +344,26 @@ class Evolution {
 
         void gauge_RK(GaugeField &U) {
             Wi_[0] = U;                                     // W0
-            timer_.startTimer("evolution_deriv");
+            startDerivTimer();
             SG.deriv(U, zBuf1_);       
-            timer_.stopTimer("evolution_deriv");                         
+            stopDerivTimer();                         
             zBuf1_ *= 0.25;                                 // Z0 = 1/4 * F(U)
             GImpl::update_field(zBuf1_, U, -2.0*epsilon);   // U = W1 = exp(ep*Z0)*W0
             Wi_[1] = U;                                     // W1
 
             zBuf1_ *= -17.0/8.0;
-            timer_.startTimer("evolution_deriv");
+            startDerivTimer();
             SG.deriv(U,uBuf1_); 
-            timer_.stopTimer("evolution_deriv");
+            stopDerivTimer();
             zBuf1_ += uBuf1_;                                // -17/32*Z0 + Z1
             zBuf1_ *= 8.0/9.0;                               // Z = -17/36*Z0 +8/9*Z1
             GImpl::update_field(zBuf1_, U, -2.0*epsilon);    // U = W2 = exp(ep*Z)*W1
             Wi_[2] = U;                                      // W2
 
             zBuf1_ *= -4.0/3.0;
-            timer_.startTimer("evolution_deriv");
+            startDerivTimer();
             SG.deriv(U,uBuf1_); 
-            timer_.stopTimer("evolution_deriv");
+            stopDerivTimer();
             zBuf1_ += uBuf1_;                                // 4/3*(17/36*Z0 -8/9*Z1) + Z2
             zBuf1_ *= 3.0/4.0;                               // Z = 17/36*Z0 -8/9*Z1 +3/4*Z2
             GImpl::update_field(zBuf1_, U, -2.0*epsilon);    // V(t+e) = exp(ep*Z)*W2

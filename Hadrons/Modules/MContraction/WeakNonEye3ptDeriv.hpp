@@ -72,13 +72,20 @@ BEGIN_HADRONS_NAMESPACE
  * - derivatives:  derivative specifications (see above)
  * - gauge:        gauge field for the derivatives (flowed, at the flow time
  *                 of the legs)
+ * - legGauges:    optional per-leg gauge fields, empty or 4 entries in the
+ *                 order qBarLeft qLeft qBarRight qRight; an empty entry means
+ *                 gauge. Each leg is differentiated with its own links, e.g.
+ *                 heavy legs flowed from stout links and light legs flowed
+ *                 from thin links. The product is still gauge covariant, but
+ *                 total-derivative relations between specifications then hold
+ *                 only up to discretisation effects.
  * - bc:           fermion temporal boundary phase (+1 or -1)
  * - momProjector: MomentumProject module (e.g. MUtilities::MPScalar); empty
  *                 for a zero-momentum sum only
  * - output:       result file stem (empty = no file)
  *
- * There are no default values: every parameter except momProjector and
- * output must be set.
+ * There are no default values: every parameter except legGauges,
+ * momProjector and output must be set.
  */
 
 /******************************************************************************
@@ -108,6 +115,7 @@ public:
                                     std::string,                gammaPairs,
                                     std::vector<WeakDerivSpec>, derivatives,
                                     std::string,                gauge,
+                                    std::vector<std::string>,   legGauges,
                                     int,                        bc,
                                     std::string,                momProjector,
                                     std::string,                output);
@@ -166,11 +174,13 @@ protected:
     virtual void execute(void);
 private:
     std::vector<std::string> legNames(void) const;
+    std::vector<std::string> legGaugeNames(void) const;
     std::vector<GammaPair>   parseGammaPairs(void) const;
     std::vector<DerivSpec>   parseDerivs(void) const;
     void project(MomCorr &acc, ComplexField &c);
 private:
-    std::vector<std::string> derivNames_;
+    // distinct differentiated (leg field, gauge field) pairs
+    std::vector<std::pair<std::string, std::string>> derivKeys_;
     bool                     zeroMomentumOnly_;
     unsigned int             nMom_;
 };
@@ -196,6 +206,14 @@ std::vector<std::string> TWeakNonEye3ptDeriv<FImpl, GImpl>::getInput(void)
 {
     std::vector<std::string> in = {par().qLeft, par().qBarLeft,
                                    par().qRight, par().qBarRight, par().gauge};
+
+    for (auto &g: par().legGauges)
+    {
+        if (!g.empty() and (std::find(in.begin(), in.end(), g) == in.end()))
+        {
+            in.push_back(g);
+        }
+    }
 
     if (!par().momProjector.empty())
     {
@@ -232,6 +250,31 @@ template <typename FImpl, typename GImpl>
 std::vector<std::string> TWeakNonEye3ptDeriv<FImpl, GImpl>::legNames(void) const
 {
     return {par().qBarLeft, par().qLeft, par().qBarRight, par().qRight};
+}
+
+// gauge field of each leg, in the order of legNames
+template <typename FImpl, typename GImpl>
+std::vector<std::string> TWeakNonEye3ptDeriv<FImpl, GImpl>::legGaugeNames(void) const
+{
+    std::vector<std::string> gauges(4, par().gauge);
+
+    if (!par().legGauges.empty())
+    {
+        if (par().legGauges.size() != 4)
+        {
+            HADRONS_ERROR(Argument, "legGauges must be empty or have 4 entries "
+                          "(qBarLeft qLeft qBarRight qRight)");
+        }
+        for (unsigned int k = 0; k < 4; ++k)
+        {
+            if (!par().legGauges[k].empty())
+            {
+                gauges[k] = par().legGauges[k];
+            }
+        }
+    }
+
+    return gauges;
 }
 
 template <typename FImpl, typename GImpl>
@@ -430,16 +473,20 @@ void TWeakNonEye3ptDeriv<FImpl, GImpl>::setup(void)
     parseGammaPairs();
     zeroMomentumOnly_ = par().momProjector.empty();
 
-    // distinct differentiated legs
-    derivNames_.clear();
+    // distinct differentiated legs, with their gauge fields
+    auto gauges = legGaugeNames();
+
+    derivKeys_.clear();
     for (auto &sp: parseDerivs())
     {
         for (unsigned int k = 0; k < 4; ++k)
         {
-            if (sp.leg[k] and (std::find(derivNames_.begin(), derivNames_.end(), names[k])
-                               == derivNames_.end()))
+            std::pair<std::string, std::string> key = {names[k], gauges[k]};
+
+            if (sp.leg[k] and (std::find(derivKeys_.begin(), derivKeys_.end(), key)
+                               == derivKeys_.end()))
             {
-                derivNames_.push_back(names[k]);
+                derivKeys_.push_back(key);
             }
         }
     }
@@ -447,9 +494,9 @@ void TWeakNonEye3ptDeriv<FImpl, GImpl>::setup(void)
     envTmpLat(PropagatorField, "L");
     envTmpLat(PropagatorField, "R");
     envTmpLat(GaugeLinkField, "link");
-    if (!derivNames_.empty())
+    if (!derivKeys_.empty())
     {
-        envTmp(std::vector<PropagatorField>, "dq", 1, derivNames_.size(), grid);
+        envTmp(std::vector<PropagatorField>, "dq", 1, derivKeys_.size(), grid);
     }
     envTmpLat(ComplexField, "contraction");
     envCreate(HadronsSerializable, getName(), 1, 0);
@@ -468,8 +515,8 @@ void TWeakNonEye3ptDeriv<FImpl, GImpl>::execute(void)
     LOG(Message) << "qr  : " << par().qRight << std::endl;
     LOG(Message) << "qbr : " << par().qBarRight << std::endl;
 
-    auto                         &U    = envGet(GaugeField, par().gauge);
     auto                         names = legNames();
+    auto                         gauges = legGaugeNames();
     std::vector<GammaPair>       pairs = parseGammaPairs();
     std::vector<DerivSpec>       specs = parseDerivs();
     Gamma                        gIn(par().gammaIn), gOut(par().gammaOut);
@@ -549,7 +596,7 @@ void TWeakNonEye3ptDeriv<FImpl, GImpl>::execute(void)
     }
 
     // derived contractions, one direction at a time, each leg derived once
-    if (!derivNames_.empty())
+    if (!derivKeys_.empty())
     {
         envGetTmp(std::vector<PropagatorField>, dq);
         for (int rho = 0; rho < Nd; ++rho)
@@ -566,11 +613,17 @@ void TWeakNonEye3ptDeriv<FImpl, GImpl>::execute(void)
                 continue;
             }
             startTimer("Insertion");
-            boundaryLink<GImpl>(link, U, rho, par().bc);
-            for (unsigned int n = 0; n < derivNames_.size(); ++n)
-            {
-                auto &q = envGet(PropagatorField, derivNames_[n]);
+            std::string linkGauge;
 
+            for (unsigned int n = 0; n < derivKeys_.size(); ++n)
+            {
+                auto &q = envGet(PropagatorField, derivKeys_[n].first);
+
+                if (derivKeys_[n].second != linkGauge)
+                {
+                    linkGauge = derivKeys_[n].second;
+                    boundaryLink<GImpl>(link, envGet(GaugeField, linkGauge), rho, par().bc);
+                }
                 covDeriv<GImpl>(dq[n], q, link, rho, DerivType::symmetric);
             }
             stopTimer("Insertion");
@@ -589,8 +642,9 @@ void TWeakNonEye3ptDeriv<FImpl, GImpl>::execute(void)
                 {
                     if (sp.leg[k])
                     {
-                        auto n = std::find(derivNames_.begin(), derivNames_.end(),
-                                           names[k]) - derivNames_.begin();
+                        std::pair<std::string, std::string> key = {names[k], gauges[k]};
+                        auto n = std::find(derivKeys_.begin(), derivKeys_.end(),
+                                           key) - derivKeys_.begin();
 
                         q[k] = &dq[n];
                     }

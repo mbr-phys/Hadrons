@@ -85,6 +85,11 @@ public:
     virtual void setup(void);
     // execution
     virtual void execute(void);
+private:
+    // names of the flowed fields saved after `step` steps, in the order of props
+    std::vector<std::string> flowedNames(const int step);
+    // integer steps at which flowed fields are saved (validates parameters)
+    std::vector<int> saveSteps(void);
 };
 
 MODULE_REGISTER_TMP(FermionFlow,
@@ -116,26 +121,57 @@ template <typename FImpl, typename GImpl, typename FlowAction>
 std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::getOutput(void)
 {
     std::vector<std::string> out = {getName(), getName()+"_U"};
+    std::vector<std::string> flowed;
 
     // output flowed fields at measurement intervals
-    for (int i = 1; i <= par().steps; i++) 
+    for (int step: saveSteps())
     {
-        if ((i % par().meas_interval == 0) || (i == par().steps)) {
-            double ft = par().step_size * i;
-            std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << ft;
-            if (par().outProps.empty()) {
-                for (std::string q : par().props) {
-                    out.push_back(q+"_t"+ftt.str());
-                }
-            } else {
-                for (std::string q : par().outProps) {
-                    out.push_back(q);
-                }
-            }
+        for (auto &q: flowedNames(step))
+        {
+            flowed.push_back(q);
         }
     }
+    checkUniqueNames(flowed);
+    out.insert(out.end(), flowed.begin(), flowed.end());
 
     return out;
+}
+
+// output names ////////////////////////////////////////////////////////////////
+// Single source for the names used by getOutput, setup and execute: built from
+// the integer step (flowTimeString), never from a running sum of step sizes.
+template <typename FImpl, typename GImpl, typename FlowAction>
+std::vector<std::string> TFermionFlow<FImpl,GImpl,FlowAction>::flowedNames(const int step)
+{
+    std::vector<std::string> names;
+
+    if (par().outProps.empty())
+    {
+        for (auto &q: par().props)
+        {
+            names.push_back(q+"_t"+flowTimeString(step, par().step_size));
+        }
+    }
+    else
+    {
+        names = par().outProps;
+    }
+
+    return names;
+}
+
+template <typename FImpl, typename GImpl, typename FlowAction>
+std::vector<int> TFermionFlow<FImpl,GImpl,FlowAction>::saveSteps(void)
+{
+    std::vector<int> steps = flowSaveSteps(par().steps, par().step_size, par().meas_interval);
+
+    if (!par().outProps.empty() and (steps.size() > 1))
+    {
+        HADRONS_ERROR(Argument, "outProps gives one name per field and can only be used "
+                      "when a single measurement point is produced (meas_interval >= steps)");
+    }
+
+    return steps;
 }
 
 // setup ///////////////////////////////////////////////////////////////////////
@@ -182,35 +218,18 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::setup(void)
     }
 
     // create output fields
-    for (int i = 1; i <= par().steps; i++) 
+    for (int step: saveSteps())
     {
-        if (( i % par().meas_interval == 0) || (i == par().steps)) {
-            double ft = par().step_size * i;
-            std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << ft;
-            if (par().outProps.empty()) {
-                for (size_t j = 0; j < par().props.size(); j++) {
-                    std::string q = par().props[j];
-                    std::string type = fieldTypes[j];
-                    if (type == "FermionField") {
-                        envCreateLat(FermionField, q+"_t"+ftt.str());
-                    } else if (type == "PropagatorField") {
-                        envCreateLat(PropagatorField, q+"_t"+ftt.str());
-                    } else {
-                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                    }
-                }
+        std::vector<std::string> names = flowedNames(step);
+
+        for (size_t j = 0; j < par().props.size(); j++) {
+            std::string type = fieldTypes[j];
+            if (type == "FermionField") {
+                envCreateLat(FermionField, names[j]);
+            } else if (type == "PropagatorField") {
+                envCreateLat(PropagatorField, names[j]);
             } else {
-                for (size_t j = 0; j < par().outProps.size(); j++) {
-                    std::string q = par().outProps[j];
-                    std::string type = fieldTypes[j];
-                    if (type == "FermionField") {
-                        envCreateLat(FermionField, q);
-                    } else if (type == "PropagatorField") {
-                        envCreateLat(PropagatorField, q);
-                    } else {
-                        HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + q);
-                    }
-                }
+                HADRONS_ERROR(Argument, "Unknown field type: " + type + " for field " + par().props[j]);
             }
         }
     }
@@ -293,9 +312,10 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
     double flowt = 0.0;
     evolve.gauge_status(Uwf,Uresult,flowt);
     
-    for (unsigned int step = 1; step <= par().steps; step++) {
-        flowt += evolve.epsilon;
-        std::stringstream ftt; ftt << std::fixed << std::setprecision(2) << flowt;
+    for (int step = 1; step <= par().steps; step++) {
+        // flow time and names from the integer step (same as setup/getOutput)
+        flowt = par().step_size*step;
+        std::stringstream ftt; ftt << flowTimeString(step, par().step_size);
 
         // evolve gauge field ONCE for all fields
         startTimer("gauge field flow time "+ftt.str());
@@ -322,27 +342,19 @@ void TFermionFlow<FImpl,GImpl,FlowAction>::execute(void)
         }
 
         // Save outputs at measurement intervals
-        if (( step % par().meas_interval == 0) || (step == par().steps)) {
-            std::string suffix = "_t"+ftt.str();
-            for (size_t j = 0; j < fermionFieldNames.size(); j++) {
-                std::string q = fermionFieldNames[j];
-                // Find global index in original props list
-                auto it = std::find(par().props.begin(), par().props.end(), q);
-                size_t globalIdx = std::distance(par().props.begin(), it);
-                std::string qo = par().outProps.empty() ? q + suffix : par().outProps[globalIdx];
-                auto &qji = envGet(FermionField, qo);
-                FermionField &qjwf = *env().template getObject<FermionField>(getName()+"_tmp_"+q+"_wf");
-                qji = qjwf;
-            }
-            for (size_t j = 0; j < propFieldNames.size(); j++) {
-                std::string q = propFieldNames[j];
-                // Find global index in original props list
-                auto it = std::find(par().props.begin(), par().props.end(), q);
-                size_t globalIdx = std::distance(par().props.begin(), it);
-                std::string qo = par().outProps.empty() ? q + suffix : par().outProps[globalIdx];
-                auto &qji = envGet(PropagatorField, qo);
-                PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
-                qji = qjwf;
+        if (isFlowSaveStep(step, par().steps, par().meas_interval)) {
+            std::vector<std::string> names = flowedNames(step);
+            for (size_t j = 0; j < par().props.size(); j++) {
+                std::string q = par().props[j];
+                if (fieldTypes[j] == "FermionField") {
+                    auto &qji = envGet(FermionField, names[j]);
+                    FermionField &qjwf = *env().template getObject<FermionField>(getName()+"_tmp_"+q+"_wf");
+                    qji = qjwf;
+                } else {
+                    auto &qji = envGet(PropagatorField, names[j]);
+                    PropagatorField &qjwf = *env().template getObject<PropagatorField>(getName()+"_tmp_"+q+"_wf");
+                    qji = qjwf;
+                }
             }
         }
     }

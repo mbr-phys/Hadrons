@@ -1,8 +1,26 @@
 #include <Hadrons/Application.hpp>
 #include <Hadrons/Modules.hpp>
+#include "TestChecks.hpp"
 
 using namespace Grid;
 using namespace Hadrons;
+using namespace HadronsTest;
+
+/*
+ * One-step adjoint fermion flow on a random gauge field.
+ *
+ * Checks (NormCheck results are written to adjoint_flow_check/<name>.1500.<ext>
+ * and read back after application.run(); [PASS]/[FAIL] per check, exit code
+ * EXIT_FAILURE if any fails):
+ *  - discrete adjoint identity (xi_0, chi_0) = (eta, chi_tau): the inner
+ *    products of 'BackwardNorm' and 'ForwardNorm' agree to 1e-10 relative;
+ *  - saved RK stages reproduce the reconstructed path: 'StageNorm' relative
+ *    difference <= 1e-10.
+ * The condensates are written but not checked (they agree only in the
+ * ensemble average).
+ */
+
+typedef MUtilities::NormCheckPropagator::Result NormResult;
 
 int main(int argc, char *argv[])
 {
@@ -159,18 +177,23 @@ int main(int argc, char *argv[])
     application.createModule<MGradientFlow::FermionFlow>("ForwardFlow", forwardPar);
 
     // Record the norms and inner products entering the discrete-adjoint test.
+    Checker chk("adjoint_flow_check", globalPar.trajCounter.start);
+
     MUtilities::NormCheckPropagator::Par backwardNormPar;
     backwardNormPar.field = "xi_t0.00";
+    backwardNormPar.output = chk.stem("BackwardNorm");
     backwardNormPar.reference = chiName;
     application.createModule<MUtilities::NormCheckPropagator>("BackwardNorm", backwardNormPar);
 
     MUtilities::NormCheckPropagator::Par forwardNormPar;
     forwardNormPar.field = etaName;
+    forwardNormPar.output = chk.stem("ForwardNorm");
     forwardNormPar.reference = "chi_t0.01";
     application.createModule<MUtilities::NormCheckPropagator>("ForwardNorm", forwardNormPar);
 
     MUtilities::NormCheckPropagator::Par stageNormPar;
     stageNormPar.field = "xi_t0.00";
+    stageNormPar.output = chk.stem("StageNorm");
     stageNormPar.reference = "xi_reconstructed_t0.00";
     application.createModule<MUtilities::NormCheckPropagator>("StageNorm", stageNormPar);
 
@@ -179,7 +202,7 @@ int main(int argc, char *argv[])
     MContraction::StochasticCondensatePropagator::Par backwardCondensatePar;
     backwardCondensatePar.eta = "xi_t0.00";
     backwardCondensatePar.phi = "xi_propagator_t0.00";
-    backwardCondensatePar.gamma = Gamma::Algebra::Identity;
+    backwardCondensatePar.gammas = "Identity";
     backwardCondensatePar.c_fl = 0.0;
     application.createModule<MContraction::StochasticCondensatePropagator>(
         "BackwardCondensate", backwardCondensatePar);
@@ -189,7 +212,7 @@ int main(int argc, char *argv[])
     MContraction::StochasticCondensatePropagator::Par forwardCondensatePar;
     forwardCondensatePar.eta = "chi_t0.01";
     forwardCondensatePar.phi = "chi_propagator_t0.01";
-    forwardCondensatePar.gamma = Gamma::Algebra::Identity;
+    forwardCondensatePar.gammas = "Identity";
     forwardCondensatePar.c_fl = 0.0;
     application.createModule<MContraction::StochasticCondensatePropagator>(
         "ForwardCondensate", forwardCondensatePar);
@@ -209,10 +232,22 @@ int main(int argc, char *argv[])
     // execution
     application.saveParameterFile("TestAdjointFlow.xml");
     application.run();
-    
+
+    // checks
+    NormResult backward = chk.read<NormResult>("BackwardNorm", "norm_check");
+    NormResult forward  = chk.read<NormResult>("ForwardNorm", "norm_check");
+    NormResult stage    = chk.read<NormResult>("StageNorm", "norm_check");
+
+    chk.exact("adjoint identity (xi_0, chi_0) = (eta, chi_tau)",
+              {backward.innerProduct}, {forward.innerProduct}, 1.0e-10);
+    chk.vanish("saved RK stages = reconstructed stages (NormCheck relative difference)",
+               {Complex(stage.relativeDifference, 0.)}, 1., 1.0e-10);
+
+    const int status = chk.summary();
+
     // epilogue
     LOG(Message) << "Grid is finalizing now" << std::endl;
     Grid_finalize();
     
-    return EXIT_SUCCESS;
+    return status;
 }

@@ -4,6 +4,15 @@
 using namespace Grid;
 using namespace Hadrons;
 
+/*
+ * Smoke test only: runs MContraction::StochasticMeson on two independent Z2
+ * wall sources next to the deterministic point-source Meson and writes the
+ * results. Nothing is checked numerically (the stochastic and deterministic
+ * correlators agree only in the noise average, so a configuration-by-
+ * configuration comparison is not possible); the exit code only reports that
+ * the workflow ran.
+ */
+
 int main(int argc, char *argv[])
 {
     // initialization //////////////////////////////////////////////////////////

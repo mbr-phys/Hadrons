@@ -28,6 +28,9 @@ EXTRA_PROGRAMS = \
 
 CLEANFILES = $(EXTRA_PROGRAMS)
 
+# header-only helpers shared by the tests that check results numerically
+noinst_HEADERS = TestChecks.hpp
+
 tests-local: $(EXTRA_PROGRAMS)
 
 Test_QED_Local_SOURCES=Test_QED_Local.cpp

@@ -1,8 +1,19 @@
 #include <Hadrons/Application.hpp>
 #include <Hadrons/Modules.hpp>
+#include "TestChecks.hpp"
 
 using namespace Grid;
 using namespace Hadrons;
+using namespace HadronsTest;
+
+/*
+ * Homogeneous propagator flow and flowed Meson contractions (smoke test,
+ * results written, not checked).
+ *
+ * The checked identity (exit code EXIT_FAILURE if it fails): two chained
+ * 1-step FermionFlow modules reproduce one 2-step module, NormCheck relative
+ * difference <= 1e-10 (result read back from propagator_flow_check/ChainNorm).
+ */
 
 int main(int argc, char *argv[])
 {
@@ -29,6 +40,7 @@ int main(int argc, char *argv[])
     globalPar.genetic.popSize      = 20;
     globalPar.genetic.mutationRate = 0.1;
     application.setPar(globalPar);
+    Checker chk("propagator_flow_check", globalPar.trajCounter.start);
     
     // gauge field
     application.createModule<MGauge::Random>("gauge");
@@ -106,6 +118,39 @@ int main(int argc, char *argv[])
     application.createModule<MContraction::Meson>("meson_t0.10",mesflowPar);
     results.push_back("meson_t0.10");
 
+
+    // ///////////////////////////////////////////////////////////////////////
+    // Chaining check: two chained 1-step FermionFlow modules (the second one
+    // starting from the first one's flowed gauge field <module>_U) must
+    // reproduce one 2-step module exactly (same arithmetic).
+    MGradientFlow::FermionFlow::Par chainPar;
+    chainPar.gauge         = "gauge";
+    chainPar.steps         = 1;
+    chainPar.step_size     = 0.01;
+    chainPar.meas_interval = 1;
+    chainPar.props         = {qName[0]};
+    chainPar.defaultType   = "PropagatorField";
+    chainPar.outProps      = {"chain_t0.01"};
+    chainPar.bc            = -1;
+    application.createModule<MGradientFlow::FermionFlow>("ChainFlow1", chainPar);
+    chainPar.gauge         = "ChainFlow1_U";
+    chainPar.props         = {"chain_t0.01"};
+    chainPar.outProps      = {"chain_t0.02"};
+    application.createModule<MGradientFlow::FermionFlow>("ChainFlow2", chainPar);
+    chainPar.gauge         = "gauge";
+    chainPar.steps         = 2;
+    chainPar.meas_interval = 2;
+    chainPar.props         = {qName[0]};
+    chainPar.outProps      = {"single_t0.02"};
+    application.createModule<MGradientFlow::FermionFlow>("SingleFlow", chainPar);
+
+    MUtilities::NormCheckPropagator::Par chainNormPar;
+    chainNormPar.field     = "chain_t0.02";
+    chainNormPar.reference = "single_t0.02";
+    chainNormPar.output    = chk.stem("ChainNorm");
+    application.createModule<MUtilities::NormCheckPropagator>("ChainNorm", chainNormPar);
+    results.push_back("ChainNorm");
+
     // save data
     MIO::WriteResultGroup::Par wPar;
     wPar.results = results;
@@ -115,10 +160,19 @@ int main(int argc, char *argv[])
     // execution
     application.saveParameterFile("PropagatorFlow.xml");
     application.run();
+
+    // checks
+    typedef MUtilities::NormCheckPropagator::Result NormResult;
+    NormResult chain = chk.read<NormResult>("ChainNorm", "norm_check");
+
+    chk.vanish("2 chained 1-step FermionFlow = one 2-step FermionFlow (relative difference)",
+               {Complex(chain.relativeDifference, 0.)}, 1., 1.0e-10);
+
+    const int status = chk.summary();
     
     // epilogue
     LOG(Message) << "Grid is finalizing now" << std::endl;
     Grid_finalize();
     
-    return EXIT_SUCCESS;
+    return status;
 }
